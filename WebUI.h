@@ -444,6 +444,10 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
         <span>🐱 หนูมาลีมีลูกแมวเหมียว (เพลงน่ารัก + สันทนาการแดนซ์)</span>
         <span class="badge-live">SHOW</span>
       </button>
+      <button class="showcase-btn" onclick="startShowcase('chang', 'dance')">
+        <span>🐘 เพลงช้าง (เพลงขวัญใจสันทนาการ + แดนซ์)</span>
+        <span class="badge-live">SHOW</span>
+      </button>
       <button class="showcase-btn" onclick="startShowcase('kaiyang', 'chicken')">
         <span>🍗 ไก่ย่างถูกเผา (เพลงสันทนาการ + ท่ากระพือปีก)</span>
         <span class="badge-live">SHOW</span>

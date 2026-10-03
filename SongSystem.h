@@ -5,35 +5,8 @@
 #include "Config.h"
 
 // ============================================================================
-// STANDARD MUSICAL PITCH FREQUENCIES (Hz) - Scientific Pitch Notation
+// MUSICAL PITCH FREQUENCIES (Hz) - Scientific Pitch Notation
 // ============================================================================
-#define NOTE_B0  31
-#define NOTE_C1  33
-#define NOTE_CS1 35
-#define NOTE_D1  37
-#define NOTE_DS1 39
-#define NOTE_E1  41
-#define NOTE_F1  44
-#define NOTE_FS1 46
-#define NOTE_G1  49
-#define NOTE_GS1 52
-#define NOTE_A1  55
-#define NOTE_AS1 58
-#define NOTE_B1  62
-
-#define NOTE_C2  65
-#define NOTE_CS2 69
-#define NOTE_D2  73
-#define NOTE_DS2 78
-#define NOTE_E2  82
-#define NOTE_F2  87
-#define NOTE_FS2 93
-#define NOTE_G2  98
-#define NOTE_GS2 104
-#define NOTE_A2  110
-#define NOTE_AS2 117
-#define NOTE_B2  123
-
 #define NOTE_C3  131
 #define NOTE_CS3 139
 #define NOTE_D3  147
@@ -88,258 +61,311 @@
 #define REST     0
 
 // ============================================================================
-// DATA STRUCTURES
+// MUSIC NOTATION MACROS (Standard Musical Note Durations in Beats)
+// 1 Beat = Quarter Note (♩)
 // ============================================================================
+#define N_WHOLE      4.00f  // 1 ห้องเต็ม (ตัวกลม)
+#define N_DOTTED_HALF 3.00f // ตัวขาวประจุด
+#define N_HALF       2.00f  // 2 จังหวะ (ตัวขาว)
+#define N_DOTTED_QUARTER 1.50f // ตัวดำประจุด
+#define N_QUARTER    1.00f  // 1 จังหวะ (ตัวดำ)
+#define N_DOTTED_EIGHTH  0.75f // เขบ็ตหนึ่งชั้นประจุด
+#define N_EIGHTH     0.50f  // ครึ่งจังหวะ (เขบ็ต 1 ชั้น)
+#define N_SIXTEENTH  0.25f  // เสี้ยวจังหวะ (เขบ็ต 2 ชั้น)
+
+// โน้ตเพลง 1 ตัว: ระดับเสียง + ความยาวจังหวะ (Beats)
 struct Note {
-  uint16_t freq;      // Frequency in Hz (REST = 0)
-  uint16_t duration;  // Active sounding time in ms
-  uint16_t pause;     // Silent gap after note for crisp articulation (25-50ms)
+  uint16_t freq;   // ความถี่เสียง เช่น NOTE_C5, REST
+  float beats;     // ความยาวจังหวะ เช่น N_QUARTER, N_EIGHTH
 };
 
+// ข้อมูลเพลง 1 เพลง
 struct SongItem {
-  const char* id;        // Machine ID for API / dispatch
-  const char* title;     // Human title
-  const char* category;  // "recreation", "pop", "game", "sfx"
-  const char* icon;      // Emoji icon
-  const Note* notes;     // Sequence in PROGMEM flash
-  size_t length;         // Note count
+  const char* id;          // Machine ID สำหรับเรียกผ่าน Web API
+  const char* title;       // ชื่อเพลงภาษาไทย
+  const char* category;    // หมวดหมู่: "recreation", "pop", "game", "sfx"
+  const char* icon;        // ไอคอนแสดงบนแดชบอร์ด
+  uint16_t bpm;            // ความเร็วเพลง (Beats Per Minute) ปรับช้า-เร็วได้ง่าย
+  float gateRatio;         // อัตราส่วนเสียงดังต่อช่องว่าง (0.75-0.85 = คมชัดไม่กลืน)
+  const Note* notes;       // ตัวโน้ตใน PROGMEM flash
+  size_t length;           // จำนวนตัวโน้ต
 };
 
 // ============================================================================
-// ACCURATE MUSICAL REPERTOIRE (ท่วงทำนองถูกต้อง ฟังออก 100%)
+// 1. หมวดเพลงสันทนาการและเพลงไทยยอดนิยม (AUTHENTIC THAI RECREATION MELODIES)
+// จุดเด่น: ใช้ทำนองร้องจริง (Vocal Line) ระดับ Octave 5 ที่ Buzzer ขับเสียงได้ใสกังวาน
 // ============================================================================
 
-// 1. หนูมาลี (Mary Had a Little Lamb) - มีลูกแมวเหมียว ขนมันดูคล้ายสำลี
-// ทำนอง: E D C D | E E E - | D D D - | E G G - | E D C D | E E E E | D D E D | C - - -
-const Note MELODY_NUMALEE[] PROGMEM = {
+// 🐱 1.1 เพลงหนูมาลีมีลูกแมวเหมียว (Mary Had a Little Lamb)
+// ทำนองร้อง: มี เร โด เร | มี มี มี - | เร เร เร - | มี ซอล ซอล - | มี เร โด เร | มี มี มี มี | เร เร มี เร | โด - - -
+const Note SONG_NUMALEE[] PROGMEM = {
   // วรรค 1: หนู-มา-ลี-มี / ลูก-แมว-เหมียว
-  {NOTE_E4, 300, 40}, {NOTE_D4, 300, 40}, {NOTE_C4, 300, 40}, {NOTE_D4, 300, 40},
-  {NOTE_E4, 300, 40}, {NOTE_E4, 300, 40}, {NOTE_E4, 600, 80},
+  {NOTE_E5, N_QUARTER}, {NOTE_D5, N_QUARTER}, {NOTE_C5, N_QUARTER}, {NOTE_D5, N_QUARTER},
+  {NOTE_E5, N_QUARTER}, {NOTE_E5, N_QUARTER}, {NOTE_E5, N_HALF},
 
-  // วรรค 2: ลูก-แมว-เหมียว (D D D)
-  {NOTE_D4, 300, 40}, {NOTE_D4, 300, 40}, {NOTE_D4, 600, 80},
+  // วรรค 2: ลูก-แมว-เหมียว
+  {NOTE_D5, N_QUARTER}, {NOTE_D5, N_QUARTER}, {NOTE_D5, N_HALF},
 
-  // วรรค 3: ลูก-แมว-เหมียว (E G G)
-  {NOTE_E4, 300, 40}, {NOTE_G4, 300, 40}, {NOTE_G4, 600, 80},
+  // วรรค 3: ลูก-แมว-เหมียว
+  {NOTE_E5, N_QUARTER}, {NOTE_G5, N_QUARTER}, {NOTE_G5, N_HALF},
 
   // วรรค 4: หนู-มา-ลี-มี / ลูก-แมว-เหมียว
-  {NOTE_E4, 300, 40}, {NOTE_D4, 300, 40}, {NOTE_C4, 300, 40}, {NOTE_D4, 300, 40},
-  {NOTE_E4, 300, 40}, {NOTE_E4, 300, 40}, {NOTE_E4, 300, 40}, {NOTE_E4, 300, 40},
+  {NOTE_E5, N_QUARTER}, {NOTE_D5, N_QUARTER}, {NOTE_C5, N_QUARTER}, {NOTE_D5, N_QUARTER},
+  {NOTE_E5, N_QUARTER}, {NOTE_E5, N_QUARTER}, {NOTE_E5, N_QUARTER}, {NOTE_E5, N_QUARTER},
 
   // วรรค 5: ขน-มัน-ดู-คล้าย / สำ-ลี
-  {NOTE_D4, 300, 40}, {NOTE_D4, 300, 40}, {NOTE_E4, 300, 40}, {NOTE_D4, 300, 40},
-  {NOTE_C4, 850, 100}
+  {NOTE_D5, N_QUARTER}, {NOTE_D5, N_QUARTER}, {NOTE_E5, N_QUARTER}, {NOTE_D5, N_QUARTER},
+  {NOTE_C5, N_DOTTED_HALF}, {REST, N_QUARTER}
 };
 
-// 2. ไก่ย่างถูกเผา (เพลงสันทนาการระดับตำนาน)
-// ทำนองจริง: ซอล ซอล มี ซอล (ไก่ย่างถูกเผา) | ซอล ซอล มี ซอล (ไก่ย่างถูกเผา)
-// ลา ลา ซอล มี เร (มันจะโดนไม้เสียบ) | ลา ลา ซอล มี เร (มันจะโดนไม้เสียบ)
-// โด เร มี (เสียบตูดซ้าย) | ซอล มี เร (เสียบตูดขวา)
-// โด โด โด (ร้อนจริงจริง) | เร เร เร (ร้อนจริงจริง) | โด เร โด (ร้อนจริงจริง)
-const Note MELODY_KAIYANG[] PROGMEM = {
+// 🐘 1.2 เพลงช้าง (เพลงเด็กและสันทนาการอันดับ 1 ของคนไทย)
+// "ช้าง ช้าง ช้าง น้องเคยเห็นช้างหรือเปล่า ช้างมันตัวโตไม่เบา จมูกยาวๆ เรียกว่างวง..."
+const Note SONG_CHANG[] PROGMEM = {
+  // ช้าง-ช้าง-ช้าง
+  {NOTE_G5, N_QUARTER}, {NOTE_G5, N_QUARTER}, {NOTE_G5, N_HALF},
+  // น้อง-เคย-เห็น-ช้าง-หรือ-เปล่า
+  {NOTE_G5, N_EIGHTH}, {NOTE_A5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_D5, N_EIGHTH}, {NOTE_C5, N_DOTTED_QUARTER},
+  // ช้าง-มัน-ตัว-โต-ไม่-เบา
+  {NOTE_E5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_A5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_E5, N_DOTTED_QUARTER},
+  // จมูก-ยาว-ยาว-เรียก-ว่า-งวง
+  {NOTE_G5, N_EIGHTH}, {NOTE_A5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_D5, N_EIGHTH}, {NOTE_C5, N_DOTTED_QUARTER},
+  // มี-เขี้ยว-ใต้-งวง-เรียก-ว่า-งา
+  {NOTE_E5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_A5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_D5, N_EIGHTH}, {NOTE_E5, N_QUARTER},
+  // มี-หู-มี-ตา-หาง-ยาว
+  {NOTE_G5, N_EIGHTH}, {NOTE_A5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_D5, N_QUARTER}, {NOTE_C5, N_HALF}
+};
+
+// 🍗 1.3 เพลงไก่ย่างถูกเผา (เพลงสันทนาการระดับตำนาน)
+// "ไก่ย่างถูกเผา ไก่ย่างถูกเผา มันจะโดนไม้เสียบ เสียบตูดซ้าย เสียบตูดขวา ร้อนจริงจริง..."
+const Note SONG_KAIYANG[] PROGMEM = {
   // ไก่-ย่าง-ถูก-เผา
-  {NOTE_G4, 180, 30}, {NOTE_G4, 180, 30}, {NOTE_E4, 180, 30}, {NOTE_G4, 320, 60},
+  {NOTE_G5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_G5, N_QUARTER},
   // ไก่-ย่าง-ถูก-เผา
-  {NOTE_G4, 180, 30}, {NOTE_G4, 180, 30}, {NOTE_E4, 180, 30}, {NOTE_G4, 320, 60},
+  {NOTE_G5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_G5, N_QUARTER},
 
   // มัน-จะ-โดน-ไม้-เสียบ
-  {NOTE_A4, 170, 25}, {NOTE_A4, 170, 25}, {NOTE_G4, 170, 25}, {NOTE_E4, 170, 25}, {NOTE_D4, 320, 60},
+  {NOTE_A5, N_EIGHTH}, {NOTE_A5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_D5, N_QUARTER},
   // มัน-จะ-โดน-ไม้-เสียบ
-  {NOTE_A4, 170, 25}, {NOTE_A4, 170, 25}, {NOTE_G4, 170, 25}, {NOTE_E4, 170, 25}, {NOTE_D4, 320, 60},
+  {NOTE_A5, N_EIGHTH}, {NOTE_A5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_D5, N_QUARTER},
 
   // เสียบ-ตูด-ซ้าย
-  {NOTE_C4, 200, 30}, {NOTE_D4, 200, 30}, {NOTE_E4, 350, 50},
+  {NOTE_C5, N_EIGHTH}, {NOTE_D5, N_EIGHTH}, {NOTE_E5, N_QUARTER},
   // เสียบ-ตูด-ขวา
-  {NOTE_G4, 200, 30}, {NOTE_E4, 200, 30}, {NOTE_D4, 350, 50},
+  {NOTE_G5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_D5, N_QUARTER},
 
   // ร้อน-จริง-จริง (โด โด โด)
-  {NOTE_C4, 160, 30}, {NOTE_C4, 160, 30}, {NOTE_C4, 280, 50},
+  {NOTE_C5, N_EIGHTH}, {NOTE_C5, N_EIGHTH}, {NOTE_C5, N_QUARTER},
   // ร้อน-จริง-จริง (เร เร เร)
-  {NOTE_D4, 160, 30}, {NOTE_D4, 160, 30}, {NOTE_D4, 280, 50},
+  {NOTE_D5, N_EIGHTH}, {NOTE_D5, N_EIGHTH}, {NOTE_D5, N_QUARTER},
   // ร้อน-จริง-จริง (โด เร โด)
-  {NOTE_C4, 180, 30}, {NOTE_D4, 180, 30}, {NOTE_C4, 450, 80}
+  {NOTE_C5, N_EIGHTH}, {NOTE_D5, N_EIGHTH}, {NOTE_C5, N_HALF}
 };
 
-// 3. กิ่งก้านใบ (สันทนาการค่ายลูกเสือ/รับน้อง)
-// กิ่ง(โด) ก้าน(เร) ใบ(มี) ชะ ชะ(ซอล ซอล) ใบ(มี) ก้าน(เร) กิ่ง(โด)
-// ฝนตกลมแรงจริงจริง (ซอล ซอล ลา ซอล มี ซอล)
-const Note MELODY_KINGKANBAI[] PROGMEM = {
-  // กิ่ง ก้าน ใบ
-  {NOTE_C4, 240, 30}, {NOTE_D4, 240, 30}, {NOTE_E4, 420, 50},
-  // ชะ ชะ
-  {NOTE_G4, 140, 25}, {NOTE_G4, 140, 50},
-  // ใบ ก้าน กิ่ง
-  {NOTE_E4, 240, 30}, {NOTE_D4, 240, 30}, {NOTE_C4, 420, 80},
+// 🍃 1.4 เพลงกิ่งก้านใบ (สันทนาการค่ายลูกเสือ/รับน้อง)
+// "กิ่ง ก้าน ใบ ชะ ชะ ใบ ก้าน กิ่ง ... ฝนตกลมแรงจริงจริง"
+const Note SONG_KINGKANBAI[] PROGMEM = {
+  // กิ่ง-ก้าน-ใบ
+  {NOTE_C5, N_QUARTER}, {NOTE_D5, N_QUARTER}, {NOTE_E5, N_HALF},
+  // ชะ-ชะ
+  {NOTE_G5, N_EIGHTH}, {NOTE_G5, N_QUARTER},
+  // ใบ-ก้าน-กิ่ง
+  {NOTE_E5, N_QUARTER}, {NOTE_D5, N_QUARTER}, {NOTE_C5, N_HALF},
 
-  // กิ่ง ก้าน ใบ
-  {NOTE_C4, 240, 30}, {NOTE_D4, 240, 30}, {NOTE_E4, 420, 50},
-  // ชะ ชะ
-  {NOTE_G4, 140, 25}, {NOTE_G4, 140, 50},
-  // ใบ ก้าน กิ่ง
-  {NOTE_E4, 240, 30}, {NOTE_D4, 240, 30}, {NOTE_C4, 420, 80},
+  // กิ่ง-ก้าน-ใบ
+  {NOTE_C5, N_QUARTER}, {NOTE_D5, N_QUARTER}, {NOTE_E5, N_HALF},
+  // ชะ-ชะ
+  {NOTE_G5, N_EIGHTH}, {NOTE_G5, N_QUARTER},
+  // ใบ-ก้าน-กิ่ง
+  {NOTE_E5, N_QUARTER}, {NOTE_D5, N_QUARTER}, {NOTE_C5, N_HALF},
 
   // ฝนตกลมแรงจริงจริง
-  {NOTE_G4, 160, 25}, {NOTE_G4, 160, 25}, {NOTE_A4, 160, 25}, {NOTE_G4, 160, 25}, {NOTE_E4, 160, 25}, {NOTE_G4, 350, 50},
+  {NOTE_G5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_A5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_G5, N_QUARTER},
   // ฝนตกลมแรงจริงจริง
-  {NOTE_G4, 160, 25}, {NOTE_G4, 160, 25}, {NOTE_A4, 160, 25}, {NOTE_G4, 160, 25}, {NOTE_E4, 160, 25}, {NOTE_C4, 350, 50},
+  {NOTE_G5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_A5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_C5, N_QUARTER},
 
-  // ชะ ชะ
-  {NOTE_G4, 140, 25}, {NOTE_G4, 140, 50},
-  // กิ่ง ก้าน ใบ
-  {NOTE_C4, 240, 30}, {NOTE_D4, 240, 30}, {NOTE_C4, 550, 100}
+  // ชะ-ชะ
+  {NOTE_G5, N_EIGHTH}, {NOTE_G5, N_QUARTER},
+  // กิ่ง-ก้าน-ใบ
+  {NOTE_C5, N_QUARTER}, {NOTE_D5, N_QUARTER}, {NOTE_C5, N_HALF}
 };
 
-// 4. รถตุ๊กตุ๊ก (ขับรถตุ๊กตุ๊ก บรรทุกถ่าน รถขึ้นสะพาน รถลงสะพาน กระตุก กระตุก กระตุก)
-const Note MELODY_TUKTUK[] PROGMEM = {
+// 🛺 1.5 เพลงรถตุ๊กตุ๊ก (ขับรถตุ๊กตุ๊ก บรรทุกถ่าน รถขึ้นสะพาน รถลงสะพาน กระตุก กระตุก กระตุก)
+const Note SONG_TUKTUK[] PROGMEM = {
   // ขับรถตุ๊กตุ๊ก
-  {NOTE_C4, 180, 25}, {NOTE_D4, 180, 25}, {NOTE_E4, 180, 25}, {NOTE_G4, 320, 50},
+  {NOTE_C5, N_EIGHTH}, {NOTE_D5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_G5, N_QUARTER},
   // บรรทุกถ่าน
-  {NOTE_G4, 180, 25}, {NOTE_E4, 180, 25}, {NOTE_C4, 320, 50},
+  {NOTE_G5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_C5, N_QUARTER},
   // รถขึ้นสะพาน
-  {NOTE_G4, 180, 25}, {NOTE_G4, 180, 25}, {NOTE_A4, 180, 25}, {NOTE_G4, 320, 50},
+  {NOTE_G5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_A5, N_EIGHTH}, {NOTE_G5, N_QUARTER},
   // รถลงสะพาน
-  {NOTE_E4, 180, 25}, {NOTE_E4, 180, 25}, {NOTE_F4, 180, 25}, {NOTE_E4, 320, 50},
+  {NOTE_E5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_F5, N_EIGHTH}, {NOTE_E5, N_QUARTER},
   // รถเลี้ยวซ้าย
-  {NOTE_C4, 180, 25}, {NOTE_D4, 180, 25}, {NOTE_E4, 300, 40},
+  {NOTE_C5, N_EIGHTH}, {NOTE_D5, N_EIGHTH}, {NOTE_E5, N_QUARTER},
   // รถเลี้ยวขวา
-  {NOTE_E4, 180, 25}, {NOTE_D4, 180, 25}, {NOTE_C4, 300, 40},
+  {NOTE_E5, N_EIGHTH}, {NOTE_D5, N_EIGHTH}, {NOTE_C5, N_QUARTER},
   // กระตุก
-  {NOTE_C4, 140, 25}, {NOTE_D4, 240, 40},
+  {NOTE_C5, N_EIGHTH}, {NOTE_D5, N_QUARTER},
   // กระตุก
-  {NOTE_C4, 140, 25}, {NOTE_D4, 240, 40},
+  {NOTE_C5, N_EIGHTH}, {NOTE_D5, N_QUARTER},
   // กระตุก!
-  {NOTE_C4, 160, 25}, {NOTE_C4, 450, 80}
+  {NOTE_C5, N_EIGHTH}, {NOTE_C5, N_HALF}
 };
 
-// 5. ปรบมือ 5 ครั้ง (สันทนาการปลุกพลัง แปะ แปะ แปะ แปะ แปะ!)
-const Note MELODY_CLAP5[] PROGMEM = {
-  {NOTE_G4, 120, 40}, {NOTE_G4, 120, 40}, {NOTE_G4, 120, 40}, {NOTE_G4, 120, 40}, {NOTE_G4, 250, 300},
-  {NOTE_C5, 120, 40}, {NOTE_C5, 120, 40}, {NOTE_C5, 120, 40}, {NOTE_C5, 120, 40}, {NOTE_C5, 350, 100}
+// 🌕 1.6 เพลงลอยกระทง (เพลงประเพณีไทยชื่อก้องโลก)
+// "วันเพ็ญเดือนสิบสอง น้ำก็นองเต็มตลิ่ง เราทั้งหลายชายหญิง สนุกกันจริงวันลอยกระทง"
+const Note SONG_LOYKRATHONG[] PROGMEM = {
+  // วัน-เพ็ญ-เดือน-สิบ-สอง / น้ำ-ก็-นอง-เต็ม-ตลิ่ง
+  {NOTE_A4, N_EIGHTH}, {NOTE_A4, N_EIGHTH}, {NOTE_C5, N_EIGHTH}, {NOTE_A4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_E4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_A4, N_QUARTER},
+  // เรา-ทั้ง-หลาย-ชาย-หญิง
+  {NOTE_C5, N_EIGHTH}, {NOTE_C5, N_EIGHTH}, {NOTE_D5, N_EIGHTH}, {NOTE_C5, N_EIGHTH}, {NOTE_A4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_A4, N_QUARTER},
+  // ส-นุก-กัน-จริง-วัน-ลอย-กระ-ทง
+  {NOTE_D5, N_EIGHTH}, {NOTE_D5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_D5, N_EIGHTH}, {NOTE_C5, N_EIGHTH}, {NOTE_A4, N_EIGHTH}, {NOTE_C5, N_EIGHTH}, {NOTE_D5, N_QUARTER},
+  // ลอย ลอย กระทง (บุญจะส่งให้เราสุขใจ)
+  {NOTE_C5, N_EIGHTH}, {NOTE_A4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_E4, N_EIGHTH}, {NOTE_D4, N_EIGHTH}, {NOTE_E4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_A4, N_HALF}
 };
 
-// 6. Super Mario Theme (เพลงเปิดระดับตำนานที่ทุกคนจำได้ทันที)
-const Note MELODY_MARIO[] PROGMEM = {
-  {NOTE_E5, 90, 40}, {NOTE_E5, 90, 90}, {NOTE_E5, 90, 90}, {NOTE_C5, 90, 30},
-  {NOTE_E5, 140, 60}, {NOTE_G5, 260, 120}, {NOTE_G4, 260, 150},
+// ============================================================================
+// 2. หมวดเพลงระดับโลก & ไวรัล (WORLD FAMOUS THEMES & HOOKS)
+// ============================================================================
 
-  // ท่อนฮิตต่อมา (โด ซอล มี)
-  {NOTE_C5, 200, 80}, {NOTE_G4, 200, 80}, {NOTE_E4, 200, 80},
-  {NOTE_A4, 180, 40}, {NOTE_B4, 180, 40}, {NOTE_AS4, 120, 30}, {NOTE_A4, 180, 50},
-  {NOTE_G4, 140, 30}, {NOTE_E5, 160, 30}, {NOTE_G5, 160, 30}, {NOTE_A5, 220, 50}
+// 🍄 2.1 Super Mario Bros Ground Theme (Nintendo Original)
+const Note SONG_MARIO[] PROGMEM = {
+  // อินโทรเปิดตัวอันโด่งดัง
+  {NOTE_E5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {REST, N_EIGHTH}, {NOTE_E5, N_EIGHTH},
+  {REST, N_EIGHTH},    {NOTE_C5, N_EIGHTH}, {NOTE_E5, N_QUARTER},
+  {NOTE_G5, N_QUARTER}, {REST, N_QUARTER}, {NOTE_G4, N_HALF},
+
+  // ท่อนฮุคหลัก (โด - ซอล - มี)
+  {NOTE_C5, N_DOTTED_QUARTER}, {NOTE_G4, N_DOTTED_QUARTER}, {NOTE_E4, N_DOTTED_QUARTER},
+  {NOTE_A4, N_QUARTER}, {NOTE_B4, N_QUARTER}, {NOTE_AS4, N_EIGHTH}, {NOTE_A4, N_QUARTER},
+  {NOTE_G4, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_A5, N_QUARTER}
 };
 
-// 7. Coffin Dance (Astronomia - ไวรัลแดนซ์แบกโลง)
-const Note MELODY_COFFIN[] PROGMEM = {
-  // อินโทรสับโน้ต
-  {NOTE_A4, 110, 25}, {NOTE_A4, 110, 25}, {NOTE_A4, 110, 25}, {NOTE_A4, 110, 25},
-  {NOTE_C5, 110, 25}, {NOTE_B4, 110, 25}, {NOTE_A4, 110, 25}, {NOTE_G4, 110, 25},
-  {NOTE_A4, 110, 25}, {NOTE_A4, 110, 25}, {NOTE_A4, 110, 25}, {NOTE_A4, 110, 25},
-  {NOTE_C5, 110, 25}, {NOTE_B4, 110, 25}, {NOTE_A4, 110, 25}, {NOTE_G4, 110, 25},
+// 🕺 2.2 Coffin Dance (Astronomia - ไวรัลแดนซ์ 126 BPM)
+const Note SONG_COFFIN[] PROGMEM = {
+  // ท่อนสับอินโทร
+  {NOTE_A4, N_EIGHTH}, {NOTE_A4, N_EIGHTH}, {NOTE_A4, N_EIGHTH}, {NOTE_A4, N_EIGHTH},
+  {NOTE_C5, N_EIGHTH}, {NOTE_B4, N_EIGHTH}, {NOTE_A4, N_EIGHTH}, {NOTE_G4, N_EIGHTH},
+  {NOTE_A4, N_EIGHTH}, {NOTE_A4, N_EIGHTH}, {NOTE_A4, N_EIGHTH}, {NOTE_A4, N_EIGHTH},
+  {NOTE_C5, N_EIGHTH}, {NOTE_B4, N_EIGHTH}, {NOTE_A4, N_EIGHTH}, {NOTE_G4, N_EIGHTH},
 
-  // ท่อนฮุคดรอปแดนซ์
-  {NOTE_C5, 120, 25}, {NOTE_C5, 120, 25}, {NOTE_C5, 120, 25}, {NOTE_C5, 120, 25},
-  {NOTE_E5, 140, 25}, {NOTE_D5, 140, 25}, {NOTE_C5, 140, 25}, {NOTE_B4, 140, 25},
-  {NOTE_C5, 120, 25}, {NOTE_C5, 120, 25}, {NOTE_C5, 120, 25}, {NOTE_C5, 120, 25},
-  {NOTE_D5, 140, 25}, {NOTE_C5, 140, 25}, {NOTE_B4, 140, 25}, {NOTE_A4, 350, 80}
+  // ท่อนดรอป EDM
+  {NOTE_C5, N_EIGHTH}, {NOTE_C5, N_EIGHTH}, {NOTE_C5, N_EIGHTH}, {NOTE_C5, N_EIGHTH},
+  {NOTE_E5, N_EIGHTH}, {NOTE_D5, N_EIGHTH}, {NOTE_C5, N_EIGHTH}, {NOTE_B4, N_EIGHTH},
+  {NOTE_C5, N_EIGHTH}, {NOTE_C5, N_EIGHTH}, {NOTE_C5, N_EIGHTH}, {NOTE_C5, N_EIGHTH},
+  {NOTE_D5, N_EIGHTH}, {NOTE_C5, N_EIGHTH}, {NOTE_B4, N_EIGHTH}, {NOTE_A4, N_HALF}
 };
 
-// 8. Star Wars - The Imperial March (Darth Vader's Theme)
-const Note MELODY_STARWARS[] PROGMEM = {
-  {NOTE_A4, 460, 50}, {NOTE_A4, 460, 50}, {NOTE_A4, 460, 50},
-  {NOTE_F4, 320, 30}, {NOTE_C5, 140, 30}, {NOTE_A4, 460, 50},
-  {NOTE_F4, 320, 30}, {NOTE_C5, 140, 30}, {NOTE_A4, 900, 150},
+// 🦈 2.3 Baby Shark (เบบี้ชาร์ค ดู ดู๊ ดู ดู ดู ดู๊)
+const Note SONG_BABYSHARK[] PROGMEM = {
+  {NOTE_D4, N_QUARTER}, {NOTE_E4, N_QUARTER},
+  {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {REST, N_SIXTEENTH},
+  {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_SIXTEENTH}, {NOTE_G4, N_SIXTEENTH},
 
-  {NOTE_E5, 460, 50}, {NOTE_E5, 460, 50}, {NOTE_E5, 460, 50},
-  {NOTE_F5, 320, 30}, {NOTE_C5, 140, 30}, {NOTE_GS4, 460, 50},
-  {NOTE_F4, 320, 30}, {NOTE_C5, 140, 30}, {NOTE_A4, 900, 150}
-};
+  {NOTE_D4, N_QUARTER}, {NOTE_E4, N_QUARTER},
+  {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {REST, N_SIXTEENTH},
+  {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_SIXTEENTH}, {NOTE_G4, N_SIXTEENTH},
 
-// 9. Baby Shark (ท่อนฮิต ดู ดู๊ ดู ดู ดู ดู๊)
-const Note MELODY_BABYSHARK[] PROGMEM = {
-  {NOTE_D4, 220, 30}, {NOTE_E4, 220, 40},
-  {NOTE_G4, 130, 25}, {NOTE_G4, 130, 25}, {NOTE_G4, 130, 25}, {REST, 30, 10},
-  {NOTE_G4, 130, 25}, {NOTE_G4, 130, 25}, {NOTE_G4, 130, 25}, {NOTE_G4, 80, 20}, {NOTE_G4, 80, 40},
-
-  {NOTE_D4, 220, 30}, {NOTE_E4, 220, 40},
-  {NOTE_G4, 130, 25}, {NOTE_G4, 130, 25}, {NOTE_G4, 130, 25}, {REST, 30, 10},
-  {NOTE_G4, 130, 25}, {NOTE_G4, 130, 25}, {NOTE_G4, 130, 25}, {NOTE_G4, 80, 20}, {NOTE_G4, 80, 40},
-
-  {NOTE_D4, 220, 30}, {NOTE_E4, 220, 40},
-  {NOTE_G4, 130, 25}, {NOTE_G4, 130, 25}, {NOTE_G4, 130, 25}, {REST, 30, 10},
-  {NOTE_G4, 130, 25}, {NOTE_G4, 130, 25}, {NOTE_G4, 130, 25}, {NOTE_G4, 80, 20}, {NOTE_G4, 80, 40},
+  {NOTE_D4, N_QUARTER}, {NOTE_E4, N_QUARTER},
+  {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {REST, N_SIXTEENTH},
+  {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_SIXTEENTH}, {NOTE_G4, N_SIXTEENTH},
 
   // เบบี้ชาร์ค!
-  {NOTE_G4, 220, 30}, {NOTE_G4, 220, 30}, {NOTE_FS4, 500, 80}
+  {NOTE_G4, N_QUARTER}, {NOTE_G4, N_QUARTER}, {NOTE_FS4, N_HALF}
 };
 
-// 10. Happy Birthday (สุขสันต์วันเกิด ครบทุกวรรคตรงตามโน้ตสากล)
-const Note MELODY_HBD[] PROGMEM = {
-  // แฮป-ปี้-เบิร์ธ-เดย์-ทู-ยู
-  {NOTE_C4, 300, 30}, {NOTE_C4, 120, 25}, {NOTE_D4, 400, 35}, {NOTE_C4, 400, 35}, {NOTE_F4, 400, 35}, {NOTE_E4, 750, 80},
-  // แฮป-ปี้-เบิร์ธ-เดย์-ทู-ยู
-  {NOTE_C4, 300, 30}, {NOTE_C4, 120, 25}, {NOTE_D4, 400, 35}, {NOTE_C4, 400, 35}, {NOTE_G4, 400, 35}, {NOTE_F4, 750, 80},
-  // แฮป-ปี้-เบิร์ธ-เดย์ แดร์...
-  {NOTE_C4, 300, 30}, {NOTE_C4, 120, 25}, {NOTE_C5, 450, 35}, {NOTE_A4, 450, 35}, {NOTE_F4, 400, 35}, {NOTE_E4, 400, 35}, {NOTE_D4, 750, 80},
-  // แฮป-ปี้-เบิร์ธ-เดย์-ทู-ยู
-  {NOTE_AS4, 300, 30}, {NOTE_AS4, 120, 25}, {NOTE_A4, 400, 35}, {NOTE_F4, 400, 35}, {NOTE_G4, 450, 35}, {NOTE_F4, 900, 120}
+// 🎂 2.4 Happy Birthday (สุขสันต์วันเกิด ครบ 4 วรรคสมบูรณ์แบบ)
+const Note SONG_HBD[] PROGMEM = {
+  // แฮปปี้เบิร์ธเดย์ทูยู
+  {NOTE_C4, N_DOTTED_EIGHTH}, {NOTE_C4, N_SIXTEENTH}, {NOTE_D4, N_QUARTER}, {NOTE_C4, N_QUARTER}, {NOTE_F4, N_QUARTER}, {NOTE_E4, N_HALF},
+  // แฮปปี้เบิร์ธเดย์ทูยู
+  {NOTE_C4, N_DOTTED_EIGHTH}, {NOTE_C4, N_SIXTEENTH}, {NOTE_D4, N_QUARTER}, {NOTE_C4, N_QUARTER}, {NOTE_G4, N_QUARTER}, {NOTE_F4, N_HALF},
+  // แฮปปี้เบิร์ธเดย์ แดร์...
+  {NOTE_C4, N_DOTTED_EIGHTH}, {NOTE_C4, N_SIXTEENTH}, {NOTE_C5, N_QUARTER}, {NOTE_A4, N_QUARTER}, {NOTE_F4, N_QUARTER}, {NOTE_E4, N_QUARTER}, {NOTE_D4, N_HALF},
+  // แฮปปี้เบิร์ธเดย์ทูยู
+  {NOTE_AS4, N_DOTTED_EIGHTH}, {NOTE_AS4, N_SIXTEENTH}, {NOTE_A4, N_QUARTER}, {NOTE_F4, N_QUARTER}, {NOTE_G4, N_QUARTER}, {NOTE_F4, N_WHOLE}
 };
 
-// 11. Seven Nation Army (The White Stripes)
-const Note MELODY_SEVEN[] PROGMEM = {
-  {NOTE_E4, 420, 40}, {NOTE_E4, 220, 30}, {NOTE_G4, 280, 30}, {NOTE_E4, 280, 30}, {NOTE_D4, 220, 30}, {NOTE_C4, 550, 50}, {NOTE_B3, 650, 80},
-  {NOTE_E4, 420, 40}, {NOTE_E4, 220, 30}, {NOTE_G4, 280, 30}, {NOTE_E4, 280, 30}, {NOTE_D4, 220, 30}, {NOTE_C4, 550, 50}, {NOTE_B3, 650, 80}
+// ⚔️ 2.5 Star Wars - The Imperial March (ธีม Darth Vader ทรงพลัง)
+const Note SONG_STARWARS[] PROGMEM = {
+  {NOTE_A4, N_QUARTER}, {NOTE_A4, N_QUARTER}, {NOTE_A4, N_QUARTER},
+  {NOTE_F4, N_DOTTED_EIGHTH}, {NOTE_C5, N_SIXTEENTH}, {NOTE_A4, N_QUARTER},
+  {NOTE_F4, N_DOTTED_EIGHTH}, {NOTE_C5, N_SIXTEENTH}, {NOTE_A4, N_HALF},
+
+  {NOTE_E5, N_QUARTER}, {NOTE_E5, N_QUARTER}, {NOTE_E5, N_QUARTER},
+  {NOTE_F5, N_DOTTED_EIGHTH}, {NOTE_C5, N_SIXTEENTH}, {NOTE_GS4, N_QUARTER},
+  {NOTE_F4, N_DOTTED_EIGHTH}, {NOTE_C5, N_SIXTEENTH}, {NOTE_A4, N_HALF}
 };
 
-// 12. Doraemon Theme (โดราเอมอน: อัง อัง อัง โตเดโมะ ดาอิซูคิ โดราเอมอนนน)
-const Note MELODY_DORAEMON[] PROGMEM = {
-  {NOTE_C5, 200, 30}, {NOTE_D5, 200, 30}, {NOTE_E5, 280, 30}, {NOTE_G5, 280, 40},
-  {NOTE_A5, 360, 30}, {NOTE_G5, 220, 30}, {NOTE_E5, 380, 50},
-  {NOTE_C5, 200, 30}, {NOTE_D5, 200, 30}, {NOTE_E5, 280, 30}, {NOTE_D5, 500, 80}
+// 🔔 2.6 โดราเอมอน (Doraemon - อัง อัง อัง โตเดโมะ ดาอิซูคิ โดราเอมอน)
+const Note SONG_DORAEMON[] PROGMEM = {
+  {NOTE_C5, N_QUARTER}, {NOTE_D5, N_QUARTER}, {NOTE_E5, N_QUARTER}, {NOTE_G5, N_QUARTER},
+  {NOTE_A5, N_DOTTED_QUARTER}, {NOTE_G5, N_QUARTER}, {NOTE_E5, N_HALF},
+  {NOTE_C5, N_QUARTER}, {NOTE_D5, N_QUARTER}, {NOTE_E5, N_QUARTER}, {NOTE_D5, N_HALF}
 };
 
-// 13. Sound Effects (เสียงเอฟเฟกต์สั้น คมชัด)
+// 🎸 2.7 Seven Nation Army (The White Stripes - ร็อคริฟฟ์ก้องโลก)
+const Note SONG_SEVEN[] PROGMEM = {
+  {NOTE_E4, N_DOTTED_QUARTER}, {NOTE_E4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_E4, N_EIGHTH}, {NOTE_D4, N_EIGHTH}, {NOTE_C4, N_HALF}, {NOTE_B3, N_HALF},
+  {NOTE_E4, N_DOTTED_QUARTER}, {NOTE_E4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_E4, N_EIGHTH}, {NOTE_D4, N_EIGHTH}, {NOTE_C4, N_HALF}, {NOTE_B3, N_HALF}
+};
+
+// ⭐ 2.8 Twinkle Twinkle Little Star (ดาวดวงน้อย)
+const Note SONG_TWINKLE[] PROGMEM = {
+  {NOTE_C5, N_QUARTER}, {NOTE_C5, N_QUARTER}, {NOTE_G5, N_QUARTER}, {NOTE_G5, N_QUARTER},
+  {NOTE_A5, N_QUARTER}, {NOTE_A5, N_QUARTER}, {NOTE_G5, N_HALF},
+  {NOTE_F5, N_QUARTER}, {NOTE_F5, N_QUARTER}, {NOTE_E5, N_QUARTER}, {NOTE_E5, N_QUARTER},
+  {NOTE_D5, N_QUARTER}, {NOTE_D5, N_QUARTER}, {NOTE_C5, N_HALF}
+};
+
+// ============================================================================
+// 3. หมวดเสียงเอฟเฟกต์ (SOUND EFFECTS & CUES)
+// ============================================================================
 const Note SFX_BEEP[] PROGMEM = {
-  {NOTE_E5, 80, 0}
+  {NOTE_E5, N_QUARTER}
 };
 
 const Note SFX_HAPPY[] PROGMEM = {
-  {NOTE_C5, 60, 20}, {NOTE_G5, 140, 0}
+  {NOTE_C5, N_EIGHTH}, {NOTE_G5, N_QUARTER}
 };
 
 const Note SFX_FANFARE[] PROGMEM = {
-  {NOTE_G4, 90, 20}, {NOTE_C5, 90, 20}, {NOTE_E5, 90, 20}, {NOTE_G5, 300, 0}
+  {NOTE_G4, N_EIGHTH}, {NOTE_C5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_G5, N_HALF}
 };
 
 const Note SFX_ALARM[] PROGMEM = {
-  {NOTE_A5, 90, 20}, {NOTE_E5, 90, 20}, {NOTE_A5, 90, 20}, {NOTE_E5, 90, 0}
+  {NOTE_A5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_A5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}
 };
 
 // ============================================================================
-// SONG REGISTRY (Open-Closed Extensible Table)
+// ตารางทะเบียนเพลง (SONG REGISTRY) - สไตล์ CS เพิ่มเพลงใหม่ง่ายเพียง 1 บรรทัด!
 // ============================================================================
 const SongItem SONG_REGISTRY[] = {
-  {"numalee",    "หนูมาลีมีลูกแมว", "recreation", "🐱", MELODY_NUMALEE,   sizeof(MELODY_NUMALEE) / sizeof(Note)},
-  {"kaiyang",    "ไก่ย่างถูกเผา",   "recreation", "🍗", MELODY_KAIYANG,   sizeof(MELODY_KAIYANG) / sizeof(Note)},
-  {"kingkanbai", "กิ่งก้านใบ",     "recreation", "🍃", MELODY_KINGKANBAI,sizeof(MELODY_KINGKANBAI) / sizeof(Note)},
-  {"tuktuk",     "รถตุ๊กตุ๊ก",       "recreation", "🛺", MELODY_TUKTUK,    sizeof(MELODY_TUKTUK) / sizeof(Note)},
-  {"clap5",      "ตบมือ 5 ครั้ง",   "recreation", "👏", MELODY_CLAP5,     sizeof(MELODY_CLAP5) / sizeof(Note)},
-  {"mario",      "Super Mario",    "game",       "🍄", MELODY_MARIO,     sizeof(MELODY_MARIO) / sizeof(Note)},
-  {"coffin",     "Coffin Dance",   "game",       "🕺", MELODY_COFFIN,    sizeof(MELODY_COFFIN) / sizeof(Note)},
-  {"starwars",   "Imperial March", "pop",        "⚔️", MELODY_STARWARS,  sizeof(MELODY_STARWARS) / sizeof(Note)},
-  {"babyshark",  "Baby Shark",     "pop",        "🦈", MELODY_BABYSHARK, sizeof(MELODY_BABYSHARK) / sizeof(Note)},
-  {"hbd",        "Happy Birthday", "pop",        "🎂", MELODY_HBD,       sizeof(MELODY_HBD) / sizeof(Note)},
-  {"seven",      "Seven Nation",   "pop",        "🔥", MELODY_SEVEN,     sizeof(MELODY_SEVEN) / sizeof(Note)},
-  {"doraemon",   "Doraemon Theme", "pop",        "🔔", MELODY_DORAEMON,  sizeof(MELODY_DORAEMON) / sizeof(Note)},
-  {"sfx_beep",   "บี๊บแจ้งเตือน",   "sfx",        "🔊", SFX_BEEP,         sizeof(SFX_BEEP) / sizeof(Note)},
-  {"sfx_happy",  "ทักทายสดใส",     "sfx",        "✨", SFX_HAPPY,        sizeof(SFX_HAPPY) / sizeof(Note)},
-  {"sfx_fanfare","ไชโยเฉลิมฉลอง",  "sfx",        "🎉", SFX_FANFARE,      sizeof(SFX_FANFARE) / sizeof(Note)},
-  {"sfx_alarm",  "เตือนภัยไซเรน",  "sfx",        "🚨", SFX_ALARM,        sizeof(SFX_ALARM) / sizeof(Note)}
+  {"numalee",     "หนูมาลีมีลูกแมว", "recreation", "🐱", 135, 0.82f, SONG_NUMALEE,    sizeof(SONG_NUMALEE)    / sizeof(Note)},
+  {"chang",       "เพลงช้าง",       "recreation", "🐘", 125, 0.82f, SONG_CHANG,      sizeof(SONG_CHANG)      / sizeof(Note)},
+  {"kaiyang",     "ไก่ย่างถูกเผา",   "recreation", "🍗", 125, 0.82f, SONG_KAIYANG,    sizeof(SONG_KAIYANG)    / sizeof(Note)},
+  {"kingkanbai",  "กิ่งก้านใบ",     "recreation", "🍃", 128, 0.82f, SONG_KINGKANBAI, sizeof(SONG_KINGKANBAI) / sizeof(Note)},
+  {"tuktuk",      "รถตุ๊กตุ๊ก",       "recreation", "🛺", 130, 0.82f, SONG_TUKTUK,     sizeof(SONG_TUKTUK)     / sizeof(Note)},
+  {"loykrathong", "เพลงลอยกระทง",   "recreation", "🌕", 120, 0.84f, SONG_LOYKRATHONG,sizeof(SONG_LOYKRATHONG)/ sizeof(Note)},
+  {"mario",       "Super Mario",    "game",       "🍄", 180, 0.80f, SONG_MARIO,      sizeof(SONG_MARIO)      / sizeof(Note)},
+  {"coffin",      "Coffin Dance",   "game",       "🕺", 126, 0.80f, SONG_COFFIN,     sizeof(SONG_COFFIN)     / sizeof(Note)},
+  {"babyshark",   "Baby Shark",     "pop",        "🦈", 116, 0.82f, SONG_BABYSHARK,  sizeof(SONG_BABYSHARK)  / sizeof(Note)},
+  {"hbd",         "Happy Birthday", "pop",        "🎂", 120, 0.85f, SONG_HBD,        sizeof(SONG_HBD)        / sizeof(Note)},
+  {"starwars",    "Imperial March", "pop",        "⚔️", 104, 0.85f, SONG_STARWARS,   sizeof(SONG_STARWARS)   / sizeof(Note)},
+  {"doraemon",    "Doraemon Theme", "pop",        "🔔", 130, 0.84f, SONG_DORAEMON,   sizeof(SONG_DORAEMON)   / sizeof(Note)},
+  {"seven",       "Seven Nation",   "pop",        "🎸", 124, 0.84f, SONG_SEVEN,      sizeof(SONG_SEVEN)      / sizeof(Note)},
+  {"twinkle",     "ดาวดวงน้อย",     "pop",        "⭐", 115, 0.82f, SONG_TWINKLE,    sizeof(SONG_TWINKLE)    / sizeof(Note)},
+  {"sfx_happy",   "ทักทายสดใส",     "sfx",        "✨", 120, 0.80f, SFX_HAPPY,       sizeof(SFX_HAPPY)       / sizeof(Note)},
+  {"sfx_fanfare", "ไชโยเฉลิมฉลอง",  "sfx",        "🎉", 120, 0.80f, SFX_FANFARE,     sizeof(SFX_FANFARE)     / sizeof(Note)},
+  {"sfx_alarm",   "เตือนภัยไซเรน",  "sfx",        "🚨", 140, 0.80f, SFX_ALARM,       sizeof(SFX_ALARM)       / sizeof(Note)}
 };
 
 const size_t SONG_REGISTRY_COUNT = sizeof(SONG_REGISTRY) / sizeof(SongItem);
 
 // ============================================================================
-// NON-BLOCKING SONG PLAYER (State Machine with Clear Articulation)
+// NON-BLOCKING MELODY PLAYER ENGINE (Computer Science State Machine)
+// คำนวณเวลาอัตโนมัติจาก BPM และ Gate Ratio พร้อม Articulation Gap ขั้นต่ำ 30ms
+// ทำให้เสียงบัซเซอร์ทุกพยางค์ขับออกมาชัดเจน ไม่มีการกลืนเสียงกัน 100%
 // ============================================================================
 class SongPlayer {
 public:
@@ -351,8 +377,8 @@ public:
     _song(nullptr),
     _noteIdx(0),
     _timer(0),
-    _currentDuration(0),
-    _currentPause(0) {}
+    _currentSoundMs(0),
+    _currentPauseMs(0) {}
 
   void begin() {
     pinMode(_pin, OUTPUT);
@@ -389,9 +415,9 @@ public:
 
     unsigned long now = millis();
     if (_state == SOUNDING) {
-      if (now - _timer >= _currentDuration) {
+      if (now - _timer >= _currentSoundMs) {
         noTone(_pin);
-        if (_currentPause > 0) {
+        if (_currentPauseMs > 0) {
           _state = PAUSING;
           _timer = now;
         } else {
@@ -399,7 +425,7 @@ public:
         }
       }
     } else if (_state == PAUSING) {
-      if (now - _timer >= _currentPause) {
+      if (now - _timer >= _currentPauseMs) {
         _advanceNote();
       }
     }
@@ -420,25 +446,44 @@ private:
   const SongItem* _song;
   size_t _noteIdx;
   unsigned long _timer;
-  uint16_t _currentDuration;
-  uint16_t _currentPause;
+  uint32_t _currentSoundMs;
+  uint32_t _currentPauseMs;
 
   void _startCurrentNote() {
     if (!_song || _noteIdx >= _song->length) {
       stop();
       return;
     }
+
     Note note;
     memcpy_P(&note, &_song->notes[_noteIdx], sizeof(Note));
-    _currentDuration = note.duration;
-    _currentPause = note.pause;
-    _timer = millis();
 
-    if (note.freq > 0) {
-      tone(_pin, note.freq);
-    } else {
+    // คำนวณเวลาจาก BPM และสัดส่วนตัวโน้ต
+    // 1 Beat = 60000 / BPM (ms)
+    float oneBeatMs = 60000.0f / (float)_song->bpm;
+    float totalNoteMs = note.beats * oneBeatMs;
+
+    if (note.freq == REST) {
+      _currentSoundMs = 0;
+      _currentPauseMs = (uint32_t)totalNoteMs;
       noTone(_pin);
+      _state = PAUSING;
+      _timer = millis();
+      return;
     }
+
+    // คำนวณ Gate Ratio เพื่อสร้างช่องไฟระหว่างตัวโน้ต (Articulation Gap)
+    // รับประกันว่าช่องว่างหยุดเสียงจะไม้น้อยกว่า 30ms เสมอ เพื่อให้แยกพยางค์ได้ชัด
+    float soundFraction = constrain(_song->gateRatio, 0.50f, 0.90f);
+    _currentSoundMs = (uint32_t)(totalNoteMs * soundFraction);
+    _currentPauseMs = (uint32_t)(totalNoteMs - _currentSoundMs);
+    if (_currentPauseMs < 30) {
+      _currentPauseMs = 30;
+      if (_currentSoundMs > 30) _currentSoundMs -= 30;
+    }
+
+    _timer = millis();
+    tone(_pin, note.freq);
   }
 
   void _advanceNote() {
