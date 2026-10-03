@@ -1,0 +1,117 @@
+# 🤖 Smart Recreational Robot (หุ่นยนต์สันทนาการอัจฉริยะ)
+
+สถาปัตยกรรมซอฟต์แวร์แบบ **Computer Science Modular & Non-Blocking State Machine** สำหรับ ESP32 ออกแบบเพื่อการใช้งานจริงในกิจกรรมสันทนาการ ค่าย กิจกรรมกลุ่ม และการศึกษา
+
+---
+
+## 📌 1. ฮาร์ดแวร์และการต่อสายพิน (Immutable Hardware Mapping)
+> **หมายเหตุสำคัญ:** พินทั้งหมดถูกล็อคตามการต่อวงจรเดิม 100% ห้ามแก้ไขเด็ดขาด
+
+| อุปกรณ์ | หน้าที่ | พิน ESP32 / รายละเอียด |
+|---|---|---|
+| **OLED Display** | แสดงสีหน้าอารมณ์ 128x64 | I2C (SDA = 21, SCL = 22), Addr `0x3C` |
+| **Buzzer** | ลำโพงเล่นเพลงสันทนาการ | `PIN 25` |
+| **Microphone (KY-037)** | ตรวจจับเสียงปรบมือ/จังหวะเพลง | `PIN 34` (Analog ADC) |
+| **Ultrasonic (HC-SR04/05)** | วัดระยะทางวัตถุ/คน | `TRIG = 5`, `ECHO = 17` |
+| **Head Servo** | หมุนคอ/หันซ้าย-ขวา | `PIN 18` |
+| **Left Arm Servo** | แขนซ้าย | `PIN 19` |
+| **Right Arm Servo** | แขนขวา | `PIN 23` |
+| **Motor Driver (L9110S)** | ขับเคลื่อนล้อซ้าย-ขวา | `PIN 26` (A1A), `PIN 27` (A1B), `PIN 14` (B1A), `PIN 12` (B1B) |
+
+---
+
+## 🏗️ 2. สถาปัตยกรรมระบบ (CS Architecture)
+
+ระบบถูกแยกเป็นโมดูลตามหลัก **Single Responsibility Principle (SRP)** และ **Open-Closed Principle (OCP)**:
+- [Config.h](file:///c:/Users/KPG_G/OneDrive/Documents/Arduino/sketch_oct2a/Config.h) : เก็บการตั้งค่าพินฮาร์ดแวร์และ Wi-Fi
+- [SongSystem.h](file:///c:/Users/KPG_G/OneDrive/Documents/Arduino/sketch_oct2a/SongSystem.h) : ตู้เพลงสันทนาการ (Jukebox) พร้อม **Non-blocking Melodic Sequencer** เก็บโน้ตไว้ใน PROGMEM flash
+- [FaceSystem.h](file:///c:/Users/KPG_G/OneDrive/Documents/Arduino/sketch_oct2a/FaceSystem.h) : เอนจินสีหน้า OLED แสดงผลแบบ Vector พร้อมระบบกระพริบตาอัตโนมัติ (Auto Natural Blink)
+- [MotionSystem.h](file:///c:/Users/KPG_G/OneDrive/Documents/Arduino/sketch_oct2a/MotionSystem.h) : คอนโทรลเลอร์ควบคุมเซอร์โว 3 ตัวแบบ Keyframe โดยไม่บล็อกลูป
+- [MotorController.h](file:///c:/Users/KPG_G/OneDrive/Documents/Arduino/sketch_oct2a/MotorController.h) : ไดรเวอร์มอเตอร์พร้อมระบบความปลอดภัย Auto-stop Watchdog เมื่อสัญญาณขาดหาย
+- [SensorManager.h](file:///c:/Users/KPG_G/OneDrive/Documents/Arduino/sketch_oct2a/SensorManager.h) : ตัวประมวลผลเซนเซอร์ระยะทาง และไมค์พร้อม Clap/Beat Detector จับจังหวะสันทนาการ
+- [RecreationEngine.h](file:///c:/Users/KPG_G/OneDrive/Documents/Arduino/sketch_oct2a/RecreationEngine.h) : สมองประสานงานโหมดสันทนาการ (Manual, Party เต้นตามเสียง, Interactive ทักทายคน, Showcase เต้นประกอบเพลง)
+- [WebUI.h](file:///c:/Users/KPG_G/OneDrive/Documents/Arduino/sketch_oct2a/WebUI.h) : Cyber-Recreation Web Dashboard ที่โหลดแคตตาล็อกแบบ **Data-Driven (Zero Hardcoding)**
+- [sketch_oct2a.ino](file:///c:/Users/KPG_G/OneDrive/Documents/Arduino/sketch_oct2a/sketch_oct2a.ino) : Main Controller & HTTP API Dispatcher
+
+---
+
+## 🎶 3. วิธีเพิ่มเพลงใหม่ (Add New Song)
+ไม่ต้องแก้ HTML หรือเขียน `if-else` เพิ่มในโค้ดหลักเลย! เพียงทำ 2 ขั้นตอนใน [SongSystem.h](file:///c:/Users/KPG_G/OneDrive/Documents/Arduino/sketch_oct2a/SongSystem.h):
+
+### 1) กำหนดตัวโน้ตเพลงใน PROGMEM
+```cpp
+const Note MELODY_MY_SONG[] PROGMEM = {
+  {NOTE_C4, 200, 20},
+  {NOTE_E4, 200, 20},
+  {NOTE_G4, 300, 30}
+};
+```
+
+### 2) ลงทะเบียนใน `SONG_REGISTRY`
+```cpp
+const SongItem SONG_REGISTRY[] = {
+  // ... เพลงเดิม ...
+  {"mysong", "ชื่อเพลงภาษาไทย", "recreation", "🎵", MELODY_MY_SONG, sizeof(MELODY_MY_SONG) / sizeof(Note)}
+};
+```
+👉 **เมื่ออัพโหลดโค้ด ปุ่มเพลงจะปรากฏบน Web Dashboard ทันทีโดยอัตโนมัติ!**
+
+---
+
+## 😊 4. วิธีเพิ่มหน้าตาใหม่ (Add New Face)
+ทำ 2 ขั้นตอนใน [FaceSystem.h](file:///c:/Users/KPG_G/OneDrive/Documents/Arduino/sketch_oct2a/FaceSystem.h):
+
+### 1) เขียนฟังก์ชันวาดกราฟิก OLED
+```cpp
+inline void drawFaceCustom(Adafruit_SH1106G& d, int phase) {
+  // วาดตาซ้าย-ขวาบนจอ 128x64
+  d.fillCircle(36, 32, 14, SH110X_WHITE);
+  d.fillCircle(92, 32, 14, SH110X_WHITE);
+}
+```
+
+### 2) ลงทะเบียนใน `FACE_REGISTRY`
+```cpp
+const FaceItem FACE_REGISTRY[] = {
+  // ... หน้าเดิม ...
+  {"custom", "ตาแบบใหม่", "🤩", drawFaceCustom}
+};
+```
+👉 **หน้าตานี้จะโผล่บนแดชบอร์ดให้กดเล่นได้ทันที!**
+
+---
+
+## 💃 5. วิธีเพิ่มท่าทางเซอร์โวใหม่ (Add New Motion)
+ทำใน [MotionSystem.h](file:///c:/Users/KPG_G/OneDrive/Documents/Arduino/sketch_oct2a/MotionSystem.h):
+```cpp
+const ServoKeyframe FRAMES_MY_MOVE[] = {
+  {90, 150, 30, 250}, // Head, ArmL, ArmR, HoldMs
+  {90, 30, 150, 250}
+};
+
+// ลงทะเบียนใน MOTION_REGISTRY
+{"mymove", "ท่าเต้นใหม่", "🕺", FRAMES_MY_MOVE, sizeof(FRAMES_MY_MOVE)/sizeof(ServoKeyframe), false}
+```
+
+---
+
+## ⏪ 6. ระบบ Version Control ภายในเครื่อง (Local Git)
+เก็บประวัติไว้ในโฟลเดอร์นี้เรียบร้อยแล้ว ไม่มีการ push ขึ้นภายนอก สามารถย้อนกลับได้เสมอ:
+
+- **ดูประวัติ commit:**
+  ```powershell
+  git log --oneline
+  ```
+- **ดูโค้ดเวอร์ชันแรกเริ่ม (Baseline):**
+  ```powershell
+  git checkout 8c53f9b
+  ```
+- **กลับมาเวอร์ชันล่าสุด:**
+  ```powershell
+  git checkout master
+  ```
+- **เซฟเวอร์ชันใหม่ของคุณเมื่อเพิ่มเพลง/หน้าตา:**
+  ```powershell
+  git add .
+  git commit -m "feat: added new song and face"
+  ```
