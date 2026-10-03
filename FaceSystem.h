@@ -210,6 +210,32 @@ inline void drawFaceLookRight(Adafruit_SH1106G& d, int phase) {
   d.fillCircle(102, 30, 7, SH110X_WHITE);
 }
 
+// 14. SIX-SEVEN Meme Face (มีมตัวเลข 6 และ 7 บนดวงตาสองข้างสลับเด้งขึ้นลง)
+inline void drawFaceSixSeven(Adafruit_SH1106G& d, int phase) {
+  int yBounceL = (phase % 2 == 0) ? -3 : 3;
+  int yBounceR = (phase % 2 == 0) ? 3 : -3;
+
+  // Left Eye: Badge with "6"
+  d.fillRoundRect(18, 14 + yBounceL, 38, 36, 8, SH110X_WHITE);
+  d.fillRoundRect(21, 17 + yBounceL, 32, 30, 6, SH110X_BLACK);
+  d.setTextSize(3);
+  d.setTextColor(SH110X_WHITE);
+  d.setCursor(29, 21 + yBounceL);
+  d.print("6");
+
+  // Right Eye: Badge with "7"
+  d.fillRoundRect(72, 14 + yBounceR, 38, 36, 8, SH110X_WHITE);
+  d.fillRoundRect(75, 17 + yBounceR, 32, 30, 6, SH110X_BLACK);
+  d.setTextSize(3);
+  d.setTextColor(SH110X_WHITE);
+  d.setCursor(83, 21 + yBounceR);
+  d.print("7");
+
+  // Swag Drill Smirk
+  d.drawLine(56, 54, 72, 51, SH110X_WHITE);
+  d.drawLine(56, 55, 72, 52, SH110X_WHITE);
+}
+
 // ============================================================================
 // FACE REGISTRY (Computer Science Extensible Table)
 // ============================================================================
@@ -223,6 +249,7 @@ struct FaceItem {
 
 const FaceItem FACE_REGISTRY[] = {
   {"normal",     "ตาปกติสดใส",   "👀", drawFaceNormal},
+  {"six_seven",  "มีม 6-7 (Six-Seven)", "🤙", drawFaceSixSeven},
   {"happy",      "ยิ้มมีความสุข",  "😊", drawFaceHappy},
   {"wink",       "วิ้งตาหวาน",    "😉", drawFaceWink},
   {"love",       "หัวใจเต้นตึกตัก", "💖", drawFaceLove},

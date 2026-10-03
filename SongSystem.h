@@ -329,6 +329,31 @@ const Note SONG_TWINKLE[] PROGMEM = {
   {NOTE_D5, N_QUARTER, DYN_MF}, {NOTE_D5, N_QUARTER, DYN_MP}, {NOTE_C5, N_HALF,    DYN_F}
 };
 
+// 🤙 2.9 ท่าไวรัล SIX-SEVEN (Doot Doot 6-7 Drill Meme Theme)
+const Note SONG_SIX_SEVEN[] PROGMEM = {
+  // Bar 1: Intro drill staccato beat
+  {NOTE_F4, N_SIXTEENTH, DYN_F}, {NOTE_F4, N_SIXTEENTH, DYN_MF}, {REST, N_EIGHTH, DYN_P},
+  {NOTE_F4, N_SIXTEENTH, DYN_F}, {NOTE_F4, N_SIXTEENTH, DYN_MF}, {REST, N_EIGHTH, DYN_P},
+  {NOTE_GS4, N_EIGHTH, DYN_F},   {NOTE_G4, N_EIGHTH, DYN_MF},
+
+  // Bar 2: "SIX! ... SEVEN!"
+  {NOTE_C5, N_QUARTER, DYN_F},        // "SIX!"
+  {REST, N_EIGHTH, DYN_P},
+  {NOTE_CS5, N_DOTTED_QUARTER, DYN_F}, // "SEVEN!"
+  {REST, N_EIGHTH, DYN_P},
+
+  // Bar 3: Drill rhythm groove
+  {NOTE_F4, N_EIGHTH, DYN_MF}, {NOTE_GS4, N_EIGHTH, DYN_F}, {NOTE_AS4, N_EIGHTH, DYN_F}, {NOTE_C5, N_EIGHTH, DYN_F},
+  {NOTE_AS4, N_EIGHTH, DYN_MF}, {NOTE_GS4, N_EIGHTH, DYN_MF}, {NOTE_F4, N_QUARTER, DYN_F},
+
+  // Bar 4: "SIX! SEVEN! SIX! SEVEN!"
+  {NOTE_C5, N_EIGHTH, DYN_F},  {REST, N_EIGHTH, DYN_P},       // "SIX!"
+  {NOTE_CS5, N_QUARTER, DYN_F},                               // "SEVEN!"
+  {NOTE_C5, N_EIGHTH, DYN_F},  {REST, N_EIGHTH, DYN_P},       // "SIX!"
+  {NOTE_DS5, N_DOTTED_QUARTER, DYN_F},                        // "SEVEN!"
+  {REST, N_QUARTER, DYN_P}
+};
+
 // ============================================================================
 // 3. หมวดเสียงเอฟเฟกต์ (SOUND EFFECTS)
 // ============================================================================
@@ -353,6 +378,7 @@ const Note SFX_ALARM[] PROGMEM = {
 // ============================================================================
 const SongItem SONG_REGISTRY[] = {
   {"mixue",       "เพลงมี่เสวี่ย (Mixue)", "recreation", "🍦", 118, 0.82f, SONG_MIXUE,      sizeof(SONG_MIXUE)      / sizeof(Note)},
+  {"six_seven",   "SIX-SEVEN (6-7)", "pop",        "🤙", 132, 0.80f, SONG_SIX_SEVEN,  sizeof(SONG_SIX_SEVEN)  / sizeof(Note)},
   {"numalee",     "หนูมาลีมีลูกแมว", "recreation", "🐱", 135, 0.82f, SONG_NUMALEE,    sizeof(SONG_NUMALEE)    / sizeof(Note)},
   {"chang",       "เพลงช้าง",       "recreation", "🐘", 125, 0.82f, SONG_CHANG,      sizeof(SONG_CHANG)      / sizeof(Note)},
   {"kaiyang",     "ไก่ย่างถูกเผา",   "recreation", "🍗", 125, 0.82f, SONG_KAIYANG,    sizeof(SONG_KAIYANG)    / sizeof(Note)},

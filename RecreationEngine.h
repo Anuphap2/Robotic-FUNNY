@@ -72,7 +72,11 @@ public:
     if (sOk || mOk) {
       _mode = MODE_SHOWCASE;
       _showcaseActive = true;
-      _face.setFace("music");
+      if ((motionId && strcmp(motionId, "six_seven") == 0) || (songId && strcmp(songId, "six_seven") == 0)) {
+        _face.setFace("six_seven");
+      } else {
+        _face.setFace("music");
+      }
       return true;
     }
     return false;

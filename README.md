@@ -101,6 +101,10 @@ const ServoKeyframe FRAMES_MY_MOVE[] = {
 {"mymove", "ท่าเต้นใหม่", "🕺", FRAMES_MY_MOVE, sizeof(FRAMES_MY_MOVE)/sizeof(ServoKeyframe), false}
 ```
 
+### 🌟 ท่าพิเศษไวรัล: ท่า SIX-SEVEN (6-7)
+- **สไตล์ท่าทาง:** มือสองข้างหงายขึ้นแล้วขยับสลับขึ้นลงคล้ายการชั่งน้ำหนัก (Weighing Scale) พร้อมส่ายหัวเอียงคอสุดกวน เข้าจังหวะ Drill บีท
+- **ระบบประสานงาน:** เมื่อกด Showcase "ท่าไวรัล SIX-SEVEN" ระบบจะเล่นเพลงตีม 6-7 พร้อมแสดงสีหน้ามีมตัวเลข 6 และ 7 สลับเด้งบนจอ OLED และเต้นวนลูปจนจบเพลง!
+
 ---
 
 ## ⏪ 6. ระบบ Version Control ภายในเครื่อง (Local Git)

@@ -146,6 +146,9 @@ void handleAction() {
   // 6. Servo Motion commands
   if (type == "motion") {
     motionPlayer.playById(cmd.c_str());
+    if (cmd == "six_seven") {
+      faceEngine.setTemporaryFace("six_seven", 3000);
+    }
     server.send(200, "text/plain", "OK");
     return;
   }

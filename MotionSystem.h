@@ -94,11 +94,46 @@ const ServoKeyframe FRAMES_HEAD_SHAKE[] = {
   {90,  30,  150, 200}
 };
 
+// 9. SIX-SEVEN Meme Dance (ท่าไวรัล 6-7 ชั่งน้ำหนักมือสลับขึ้นลงพร้อมส่ายหัวสุดกวน)
+const ServoKeyframe FRAMES_SIX_SEVEN[] = {
+  // Prep / Ready
+  {90,  70,  110, 180},
+
+  // Hit 1: "SIX!" (Left hand up, Right hand down, head tilt left)
+  {65,  140, 155, 230},
+  {72,  125, 145, 100}, // Micro-bounce recoil
+
+  // Hit 1: "SEVEN!" (Left hand down, Right hand up, head tilt right)
+  {115, 35,  45,  230},
+  {108, 48,  58,  100}, // Micro-bounce recoil
+
+  // Hit 2: "SIX!"
+  {65,  140, 155, 230},
+  {72,  125, 145, 100},
+
+  // Hit 2: "SEVEN!"
+  {115, 35,  45,  230},
+  {108, 48,  58,  100},
+
+  // Hit 3 (Fast drill combo: 6 - 7 - 6 - 7!)
+  {60,  145, 160, 170}, // 6!
+  {120, 30,  40,  170}, // 7!
+  {60,  145, 160, 170}, // 6!
+  {120, 30,  40,  170}, // 7!
+
+  // Signature balanced scale freeze
+  {90,  95,  85,  450},
+
+  // Return to ready center
+  {90,  30,  150, 200}
+};
+
 // ============================================================================
 // MOTION REGISTRY (Extensible Table)
 // ============================================================================
 const MotionRoutine MOTION_REGISTRY[] = {
   {"dance",      "สันทนาการแดนซ์", "💃", FRAMES_DANCE,      sizeof(FRAMES_DANCE) / sizeof(ServoKeyframe),      false},
+  {"six_seven",  "ท่าไวรัล SIX-SEVEN (6-7)", "⚖️", FRAMES_SIX_SEVEN, sizeof(FRAMES_SIX_SEVEN) / sizeof(ServoKeyframe), false},
   {"chicken",    "ท่าไก่ย่างถูกเผา", "🍗", FRAMES_CHICKEN,    sizeof(FRAMES_CHICKEN) / sizeof(ServoKeyframe),    false},
   {"cheer",      "ไชโยเฉลิมฉลอง",  "🙌", FRAMES_CHEER,      sizeof(FRAMES_CHEER) / sizeof(ServoKeyframe),      false},
   {"wave",       "โบกมือทักทาย",   "👋", FRAMES_WAVE,       sizeof(FRAMES_WAVE) / sizeof(ServoKeyframe),       false},
