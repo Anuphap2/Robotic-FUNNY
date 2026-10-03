@@ -38,23 +38,23 @@
 ## 🎶 3. วิธีเพิ่มเพลงใหม่ (Add New Song)
 ไม่ต้องแก้ HTML หรือเขียน `if-else` เพิ่มในโค้ดหลักเลย! เพียงทำ 2 ขั้นตอนใน [SongSystem.h](file:///c:/Users/KPG_G/OneDrive/Documents/Arduino/sketch_oct2a/SongSystem.h):
 
-### 1) กำหนดตัวโน้ตเพลงใน PROGMEM
+### 1) กำหนดตัวโน้ตเพลงด้วยสัญกรณ์ดนตรีสากล (Beats)
 ```cpp
-const Note MELODY_MY_SONG[] PROGMEM = {
-  {NOTE_C4, 200, 20},
-  {NOTE_E4, 200, 20},
-  {NOTE_G4, 300, 30}
+const Note SONG_MY_SONG[] PROGMEM = {
+  {NOTE_C5, N_QUARTER}, // ตัวดำ 1 จังหวะ
+  {NOTE_E5, N_QUARTER}, // ตัวดำ 1 จังหวะ
+  {NOTE_G5, N_HALF}     // ตัวขาว 2 จังหวะ
 };
 ```
 
-### 2) ลงทะเบียนใน `SONG_REGISTRY`
+### 2) ลงทะเบียนใน `SONG_REGISTRY` พร้อมระบุ BPM
 ```cpp
 const SongItem SONG_REGISTRY[] = {
   // ... เพลงเดิม ...
-  {"mysong", "ชื่อเพลงภาษาไทย", "recreation", "🎵", MELODY_MY_SONG, sizeof(MELODY_MY_SONG) / sizeof(Note)}
+  {"mysong", "ชื่อเพลงภาษาไทย", "recreation", "🎵", 125, 0.82f, SONG_MY_SONG, sizeof(SONG_MY_SONG) / sizeof(Note)}
 };
 ```
-👉 **เมื่ออัพโหลดโค้ด ปุ่มเพลงจะปรากฏบน Web Dashboard ทันทีโดยอัตโนมัติ!**
+👉 **เมื่ออัพโหลดโค้ด ปุ่มเพลงจะปรากฏบน Web Dashboard ทันทีโดยอัตโนมัติ! ปรับความเร็วเพลงได้ง่ายๆ แค่แก้ตัวเลข BPM**
 
 ---
 
