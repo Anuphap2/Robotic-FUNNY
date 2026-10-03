@@ -2,6 +2,7 @@
 #define SONG_SYSTEM_H
 
 #include <Arduino.h>
+#include "esp32-hal-ledc.h"
 #include "Config.h"
 
 // ============================================================================
@@ -61,284 +62,271 @@
 #define REST     0
 
 // ============================================================================
-// MUSIC NOTATION MACROS (Standard Musical Note Durations in Beats)
-// 1 Beat = Quarter Note (♩)
+// DURATION & DYNAMICS NOTATION
 // ============================================================================
-#define N_WHOLE      4.00f  // 1 ห้องเต็ม (ตัวกลม)
-#define N_DOTTED_HALF 3.00f // ตัวขาวประจุด
-#define N_HALF       2.00f  // 2 จังหวะ (ตัวขาว)
-#define N_DOTTED_QUARTER 1.50f // ตัวดำประจุด
-#define N_QUARTER    1.00f  // 1 จังหวะ (ตัวดำ)
-#define N_DOTTED_EIGHTH  0.75f // เขบ็ตหนึ่งชั้นประจุด
-#define N_EIGHTH     0.50f  // ครึ่งจังหวะ (เขบ็ต 1 ชั้น)
-#define N_SIXTEENTH  0.25f  // เสี้ยวจังหวะ (เขบ็ต 2 ชั้น)
+#define N_WHOLE          4.00f  // 1 ห้องเต็ม (ตัวกลม)
+#define N_DOTTED_HALF    3.00f  // ตัวขาวประจุด
+#define N_HALF           2.00f  // 2 จังหวะ (ตัวขาว)
+#define N_DOTTED_QUARTER 1.50f  // ตัวดำประจุด
+#define N_QUARTER        1.00f  // 1 จังหวะ (ตัวดำ)
+#define N_DOTTED_EIGHTH  0.75f  // เขบ็ตหนึ่งชั้นประจุด
+#define N_EIGHTH         0.50f  // ครึ่งจังหวะ (เขบ็ต 1 ชั้น)
+#define N_SIXTEENTH      0.25f  // เสี้ยวจังหวะ (เขบ็ต 2 ชั้น)
 
-// โน้ตเพลง 1 ตัว: ระดับเสียง + ความยาวจังหวะ (Beats)
-struct Note {
-  uint16_t freq;   // ความถี่เสียง เช่น NOTE_C5, REST
-  float beats;     // ความยาวจังหวะ เช่น N_QUARTER, N_EIGHTH
+// ระดับความดัง (Musical Dynamics)
+enum DynamicLevel {
+  DYN_AUTO = 0, // อัตโนมัติ: จังหวะตก/โน้ตยาว = หนักแน่น, โน้ตสั้น = เบานุ่ม
+  DYN_P    = 1, // Piano (นุ่มนวล)
+  DYN_MP   = 2, // Mezzo-piano (ปานกลาง)
+  DYN_MF   = 3, // Mezzo-forte (ชัดเจน)
+  DYN_F    = 4  // Forte (หนักแน่น มีพลัง)
 };
 
-// ข้อมูลเพลง 1 เพลง
+// สไตล์เสียงดนตรี (Instrument Sound Timbres)
+enum InstrumentTimbre {
+  TIMBRE_MUSIC_BOX = 0, // 🔔 กล่องดนตรี / กระดิ่งแก้ว (Natural decaying chime envelope - ไพเราะที่สุด)
+  TIMBRE_VIBRATO   = 1, // 🎻 เสียงร้องมีลูกคอ (Expressive human vibrato on sustained notes)
+  TIMBRE_ACOUSTIC  = 2, // 🎹 เปียโน / คาลิมบา (Pluck attack with warm body resonance)
+  TIMBRE_CHIPTUNE  = 3  // 👾 เรโทร 8-บิต (Classic arcade punchy square wave)
+};
+
+struct Note {
+  uint16_t freq;  // ความถี่เสียง เช่น NOTE_C5, REST
+  float beats;    // ความยาวจังหวะ (เช่น N_QUARTER, N_EIGHTH)
+  uint8_t dyn;    // ไดนามิก (DYN_AUTO, DYN_P, DYN_MF, DYN_F)
+};
+
 struct SongItem {
   const char* id;          // Machine ID สำหรับเรียกผ่าน Web API
   const char* title;       // ชื่อเพลงภาษาไทย
   const char* category;    // หมวดหมู่: "recreation", "pop", "game", "sfx"
   const char* icon;        // ไอคอนแสดงบนแดชบอร์ด
-  uint16_t bpm;            // ความเร็วเพลง (Beats Per Minute) ปรับช้า-เร็วได้ง่าย
-  float gateRatio;         // อัตราส่วนเสียงดังต่อช่องว่าง (0.75-0.85 = คมชัดไม่กลืน)
+  uint16_t bpm;            // ความเร็วเพลง (Beats Per Minute)
+  float gateRatio;         // อัตราส่วนความกว้างตัวโน้ต (0.75-0.85)
   const Note* notes;       // ตัวโน้ตใน PROGMEM flash
   size_t length;           // จำนวนตัวโน้ต
 };
 
 // ============================================================================
 // 1. หมวดเพลงสันทนาการและเพลงไทยยอดนิยม (AUTHENTIC THAI RECREATION MELODIES)
-// จุดเด่น: ใช้ทำนองร้องจริง (Vocal Line) ระดับ Octave 5 ที่ Buzzer ขับเสียงได้ใสกังวาน
 // ============================================================================
 
-// 🐱 1.1 เพลงหนูมาลีมีลูกแมวเหมียว (Mary Had a Little Lamb)
-// ทำนองร้อง: มี เร โด เร | มี มี มี - | เร เร เร - | มี ซอล ซอล - | มี เร โด เร | มี มี มี มี | เร เร มี เร | โด - - -
+// 🐱 1.1 หนูมาลีมีลูกแมวเหมียว (Mary Had a Little Lamb)
 const Note SONG_NUMALEE[] PROGMEM = {
   // วรรค 1: หนู-มา-ลี-มี / ลูก-แมว-เหมียว
-  {NOTE_E5, N_QUARTER}, {NOTE_D5, N_QUARTER}, {NOTE_C5, N_QUARTER}, {NOTE_D5, N_QUARTER},
-  {NOTE_E5, N_QUARTER}, {NOTE_E5, N_QUARTER}, {NOTE_E5, N_HALF},
+  {NOTE_E5, N_QUARTER, DYN_MF}, {NOTE_D5, N_QUARTER, DYN_MP}, {NOTE_C5, N_QUARTER, DYN_MP}, {NOTE_D5, N_QUARTER, DYN_MP},
+  {NOTE_E5, N_QUARTER, DYN_F},  {NOTE_E5, N_QUARTER, DYN_MF}, {NOTE_E5, N_HALF,    DYN_F},
 
   // วรรค 2: ลูก-แมว-เหมียว
-  {NOTE_D5, N_QUARTER}, {NOTE_D5, N_QUARTER}, {NOTE_D5, N_HALF},
+  {NOTE_D5, N_QUARTER, DYN_MF}, {NOTE_D5, N_QUARTER, DYN_MP}, {NOTE_D5, N_HALF,    DYN_MF},
 
   // วรรค 3: ลูก-แมว-เหมียว
-  {NOTE_E5, N_QUARTER}, {NOTE_G5, N_QUARTER}, {NOTE_G5, N_HALF},
+  {NOTE_E5, N_QUARTER, DYN_MF}, {NOTE_G5, N_QUARTER, DYN_F},  {NOTE_G5, N_HALF,    DYN_F},
 
   // วรรค 4: หนู-มา-ลี-มี / ลูก-แมว-เหมียว
-  {NOTE_E5, N_QUARTER}, {NOTE_D5, N_QUARTER}, {NOTE_C5, N_QUARTER}, {NOTE_D5, N_QUARTER},
-  {NOTE_E5, N_QUARTER}, {NOTE_E5, N_QUARTER}, {NOTE_E5, N_QUARTER}, {NOTE_E5, N_QUARTER},
+  {NOTE_E5, N_QUARTER, DYN_MF}, {NOTE_D5, N_QUARTER, DYN_MP}, {NOTE_C5, N_QUARTER, DYN_MP}, {NOTE_D5, N_QUARTER, DYN_MP},
+  {NOTE_E5, N_QUARTER, DYN_F},  {NOTE_E5, N_QUARTER, DYN_MF}, {NOTE_E5, N_QUARTER, DYN_MF}, {NOTE_E5, N_QUARTER, DYN_MF},
 
   // วรรค 5: ขน-มัน-ดู-คล้าย / สำ-ลี
-  {NOTE_D5, N_QUARTER}, {NOTE_D5, N_QUARTER}, {NOTE_E5, N_QUARTER}, {NOTE_D5, N_QUARTER},
-  {NOTE_C5, N_DOTTED_HALF}, {REST, N_QUARTER}
+  {NOTE_D5, N_QUARTER, DYN_MF}, {NOTE_D5, N_QUARTER, DYN_MP}, {NOTE_E5, N_QUARTER, DYN_MF}, {NOTE_D5, N_QUARTER, DYN_MP},
+  {NOTE_C5, N_DOTTED_HALF, DYN_F}, {REST, N_QUARTER, DYN_AUTO}
 };
 
 // 🐘 1.2 เพลงช้าง (เพลงเด็กและสันทนาการอันดับ 1 ของคนไทย)
-// "ช้าง ช้าง ช้าง น้องเคยเห็นช้างหรือเปล่า ช้างมันตัวโตไม่เบา จมูกยาวๆ เรียกว่างวง..."
 const Note SONG_CHANG[] PROGMEM = {
   // ช้าง-ช้าง-ช้าง
-  {NOTE_G5, N_QUARTER}, {NOTE_G5, N_QUARTER}, {NOTE_G5, N_HALF},
+  {NOTE_G5, N_QUARTER, DYN_F},  {NOTE_G5, N_QUARTER, DYN_MF}, {NOTE_G5, N_HALF, DYN_F},
   // น้อง-เคย-เห็น-ช้าง-หรือ-เปล่า
-  {NOTE_G5, N_EIGHTH}, {NOTE_A5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_D5, N_EIGHTH}, {NOTE_C5, N_DOTTED_QUARTER},
+  {NOTE_G5, N_EIGHTH, DYN_MF},  {NOTE_A5, N_EIGHTH, DYN_F},  {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_EIGHTH, DYN_MP}, {NOTE_D5, N_EIGHTH, DYN_MP}, {NOTE_C5, N_DOTTED_QUARTER, DYN_MF},
   // ช้าง-มัน-ตัว-โต-ไม่-เบา
-  {NOTE_E5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_A5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_E5, N_DOTTED_QUARTER},
+  {NOTE_E5, N_EIGHTH, DYN_MF},  {NOTE_E5, N_EIGHTH, DYN_MP}, {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_A5, N_EIGHTH, DYN_F},  {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_DOTTED_QUARTER, DYN_MF},
   // จมูก-ยาว-ยาว-เรียก-ว่า-งวง
-  {NOTE_G5, N_EIGHTH}, {NOTE_A5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_D5, N_EIGHTH}, {NOTE_C5, N_DOTTED_QUARTER},
+  {NOTE_G5, N_EIGHTH, DYN_MF},  {NOTE_A5, N_EIGHTH, DYN_F},  {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_EIGHTH, DYN_MP}, {NOTE_D5, N_EIGHTH, DYN_MP}, {NOTE_C5, N_DOTTED_QUARTER, DYN_MF},
   // มี-เขี้ยว-ใต้-งวง-เรียก-ว่า-งา
-  {NOTE_E5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_A5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_D5, N_EIGHTH}, {NOTE_E5, N_QUARTER},
+  {NOTE_E5, N_EIGHTH, DYN_MF},  {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_A5, N_EIGHTH, DYN_F},  {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_EIGHTH, DYN_MP}, {NOTE_D5, N_EIGHTH, DYN_MP}, {NOTE_E5, N_QUARTER, DYN_MF},
   // มี-หู-มี-ตา-หาง-ยาว
-  {NOTE_G5, N_EIGHTH}, {NOTE_A5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_D5, N_QUARTER}, {NOTE_C5, N_HALF}
+  {NOTE_G5, N_EIGHTH, DYN_MF},  {NOTE_A5, N_EIGHTH, DYN_F},  {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_EIGHTH, DYN_MP}, {NOTE_D5, N_QUARTER, DYN_MF}, {NOTE_C5, N_HALF, DYN_F}
 };
 
-// 🍗 1.3 เพลงไก่ย่างถูกเผา (เพลงสันทนาการระดับตำนาน)
-// "ไก่ย่างถูกเผา ไก่ย่างถูกเผา มันจะโดนไม้เสียบ เสียบตูดซ้าย เสียบตูดขวา ร้อนจริงจริง..."
+// 🍗 1.3 เพลงไก่ย่างถูกเผา
 const Note SONG_KAIYANG[] PROGMEM = {
   // ไก่-ย่าง-ถูก-เผา
-  {NOTE_G5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_G5, N_QUARTER},
+  {NOTE_G5, N_EIGHTH, DYN_F}, {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_EIGHTH, DYN_MP}, {NOTE_G5, N_QUARTER, DYN_F},
   // ไก่-ย่าง-ถูก-เผา
-  {NOTE_G5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_G5, N_QUARTER},
+  {NOTE_G5, N_EIGHTH, DYN_F}, {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_EIGHTH, DYN_MP}, {NOTE_G5, N_QUARTER, DYN_F},
 
   // มัน-จะ-โดน-ไม้-เสียบ
-  {NOTE_A5, N_EIGHTH}, {NOTE_A5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_D5, N_QUARTER},
+  {NOTE_A5, N_EIGHTH, DYN_F}, {NOTE_A5, N_EIGHTH, DYN_MF}, {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_EIGHTH, DYN_MP}, {NOTE_D5, N_QUARTER, DYN_MF},
   // มัน-จะ-โดน-ไม้-เสียบ
-  {NOTE_A5, N_EIGHTH}, {NOTE_A5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_D5, N_QUARTER},
+  {NOTE_A5, N_EIGHTH, DYN_F}, {NOTE_A5, N_EIGHTH, DYN_MF}, {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_EIGHTH, DYN_MP}, {NOTE_D5, N_QUARTER, DYN_MF},
 
   // เสียบ-ตูด-ซ้าย
-  {NOTE_C5, N_EIGHTH}, {NOTE_D5, N_EIGHTH}, {NOTE_E5, N_QUARTER},
+  {NOTE_C5, N_EIGHTH, DYN_MP}, {NOTE_D5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_QUARTER, DYN_F},
   // เสียบ-ตูด-ขวา
-  {NOTE_G5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_D5, N_QUARTER},
+  {NOTE_G5, N_EIGHTH, DYN_F},  {NOTE_E5, N_EIGHTH, DYN_MF}, {NOTE_D5, N_QUARTER, DYN_MF},
 
-  // ร้อน-จริง-จริง (โด โด โด)
-  {NOTE_C5, N_EIGHTH}, {NOTE_C5, N_EIGHTH}, {NOTE_C5, N_QUARTER},
-  // ร้อน-จริง-จริง (เร เร เร)
-  {NOTE_D5, N_EIGHTH}, {NOTE_D5, N_EIGHTH}, {NOTE_D5, N_QUARTER},
-  // ร้อน-จริง-จริง (โด เร โด)
-  {NOTE_C5, N_EIGHTH}, {NOTE_D5, N_EIGHTH}, {NOTE_C5, N_HALF}
+  // ร้อน-จริง-จริง
+  {NOTE_C5, N_EIGHTH, DYN_MP}, {NOTE_C5, N_EIGHTH, DYN_MP}, {NOTE_C5, N_QUARTER, DYN_MF},
+  // ร้อน-จริง-จริง
+  {NOTE_D5, N_EIGHTH, DYN_MF}, {NOTE_D5, N_EIGHTH, DYN_MF}, {NOTE_D5, N_QUARTER, DYN_F},
+  // ร้อน-จริง-จริง
+  {NOTE_C5, N_EIGHTH, DYN_MF}, {NOTE_D5, N_EIGHTH, DYN_F},  {NOTE_C5, N_HALF,    DYN_F}
 };
 
-// 🍃 1.4 เพลงกิ่งก้านใบ (สันทนาการค่ายลูกเสือ/รับน้อง)
-// "กิ่ง ก้าน ใบ ชะ ชะ ใบ ก้าน กิ่ง ... ฝนตกลมแรงจริงจริง"
+// 🍃 1.4 เพลงกิ่งก้านใบ
 const Note SONG_KINGKANBAI[] PROGMEM = {
   // กิ่ง-ก้าน-ใบ
-  {NOTE_C5, N_QUARTER}, {NOTE_D5, N_QUARTER}, {NOTE_E5, N_HALF},
+  {NOTE_C5, N_QUARTER, DYN_MF}, {NOTE_D5, N_QUARTER, DYN_MF}, {NOTE_E5, N_HALF, DYN_F},
   // ชะ-ชะ
-  {NOTE_G5, N_EIGHTH}, {NOTE_G5, N_QUARTER},
+  {NOTE_G5, N_EIGHTH, DYN_F},  {NOTE_G5, N_QUARTER, DYN_F},
   // ใบ-ก้าน-กิ่ง
-  {NOTE_E5, N_QUARTER}, {NOTE_D5, N_QUARTER}, {NOTE_C5, N_HALF},
+  {NOTE_E5, N_QUARTER, DYN_MF}, {NOTE_D5, N_QUARTER, DYN_MP}, {NOTE_C5, N_HALF, DYN_MF},
 
   // กิ่ง-ก้าน-ใบ
-  {NOTE_C5, N_QUARTER}, {NOTE_D5, N_QUARTER}, {NOTE_E5, N_HALF},
+  {NOTE_C5, N_QUARTER, DYN_MF}, {NOTE_D5, N_QUARTER, DYN_MF}, {NOTE_E5, N_HALF, DYN_F},
   // ชะ-ชะ
-  {NOTE_G5, N_EIGHTH}, {NOTE_G5, N_QUARTER},
+  {NOTE_G5, N_EIGHTH, DYN_F},  {NOTE_G5, N_QUARTER, DYN_F},
   // ใบ-ก้าน-กิ่ง
-  {NOTE_E5, N_QUARTER}, {NOTE_D5, N_QUARTER}, {NOTE_C5, N_HALF},
+  {NOTE_E5, N_QUARTER, DYN_MF}, {NOTE_D5, N_QUARTER, DYN_MP}, {NOTE_C5, N_HALF, DYN_MF},
 
   // ฝนตกลมแรงจริงจริง
-  {NOTE_G5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_A5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_G5, N_QUARTER},
+  {NOTE_G5, N_EIGHTH, DYN_F}, {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_A5, N_EIGHTH, DYN_F}, {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_EIGHTH, DYN_MP}, {NOTE_G5, N_QUARTER, DYN_F},
   // ฝนตกลมแรงจริงจริง
-  {NOTE_G5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_A5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_C5, N_QUARTER},
+  {NOTE_G5, N_EIGHTH, DYN_F}, {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_A5, N_EIGHTH, DYN_F}, {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_EIGHTH, DYN_MP}, {NOTE_C5, N_QUARTER, DYN_MF},
 
   // ชะ-ชะ
-  {NOTE_G5, N_EIGHTH}, {NOTE_G5, N_QUARTER},
+  {NOTE_G5, N_EIGHTH, DYN_F},  {NOTE_G5, N_QUARTER, DYN_F},
   // กิ่ง-ก้าน-ใบ
-  {NOTE_C5, N_QUARTER}, {NOTE_D5, N_QUARTER}, {NOTE_C5, N_HALF}
+  {NOTE_C5, N_QUARTER, DYN_MF}, {NOTE_D5, N_QUARTER, DYN_MF}, {NOTE_C5, N_HALF, DYN_F}
 };
 
-// 🛺 1.5 เพลงรถตุ๊กตุ๊ก (ขับรถตุ๊กตุ๊ก บรรทุกถ่าน รถขึ้นสะพาน รถลงสะพาน กระตุก กระตุก กระตุก)
+// 🛺 1.5 เพลงรถตุ๊กตุ๊ก
 const Note SONG_TUKTUK[] PROGMEM = {
-  // ขับรถตุ๊กตุ๊ก
-  {NOTE_C5, N_EIGHTH}, {NOTE_D5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_G5, N_QUARTER},
-  // บรรทุกถ่าน
-  {NOTE_G5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_C5, N_QUARTER},
-  // รถขึ้นสะพาน
-  {NOTE_G5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_A5, N_EIGHTH}, {NOTE_G5, N_QUARTER},
-  // รถลงสะพาน
-  {NOTE_E5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_F5, N_EIGHTH}, {NOTE_E5, N_QUARTER},
-  // รถเลี้ยวซ้าย
-  {NOTE_C5, N_EIGHTH}, {NOTE_D5, N_EIGHTH}, {NOTE_E5, N_QUARTER},
-  // รถเลี้ยวขวา
-  {NOTE_E5, N_EIGHTH}, {NOTE_D5, N_EIGHTH}, {NOTE_C5, N_QUARTER},
-  // กระตุก
-  {NOTE_C5, N_EIGHTH}, {NOTE_D5, N_QUARTER},
-  // กระตุก
-  {NOTE_C5, N_EIGHTH}, {NOTE_D5, N_QUARTER},
-  // กระตุก!
-  {NOTE_C5, N_EIGHTH}, {NOTE_C5, N_HALF}
+  {NOTE_C5, N_EIGHTH, DYN_MF}, {NOTE_D5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_EIGHTH, DYN_MF}, {NOTE_G5, N_QUARTER, DYN_F},
+  {NOTE_G5, N_EIGHTH, DYN_F},  {NOTE_E5, N_EIGHTH, DYN_MF}, {NOTE_C5, N_QUARTER, DYN_MF},
+  {NOTE_G5, N_EIGHTH, DYN_F},  {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_A5, N_EIGHTH, DYN_F},  {NOTE_G5, N_QUARTER, DYN_F},
+  {NOTE_E5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_EIGHTH, DYN_MP}, {NOTE_F5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_QUARTER, DYN_MF},
+  {NOTE_C5, N_EIGHTH, DYN_MP}, {NOTE_D5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_QUARTER, DYN_F},
+  {NOTE_E5, N_EIGHTH, DYN_MF}, {NOTE_D5, N_EIGHTH, DYN_MP}, {NOTE_C5, N_QUARTER, DYN_MF},
+  {NOTE_C5, N_EIGHTH, DYN_MP}, {NOTE_D5, N_QUARTER, DYN_MF},
+  {NOTE_C5, N_EIGHTH, DYN_MP}, {NOTE_D5, N_QUARTER, DYN_MF},
+  {NOTE_C5, N_EIGHTH, DYN_MF}, {NOTE_C5, N_HALF,    DYN_F}
 };
 
-// 🌕 1.6 เพลงลอยกระทง (เพลงประเพณีไทยชื่อก้องโลก)
-// "วันเพ็ญเดือนสิบสอง น้ำก็นองเต็มตลิ่ง เราทั้งหลายชายหญิง สนุกกันจริงวันลอยกระทง"
+// 🌕 1.6 เพลงลอยกระทง
 const Note SONG_LOYKRATHONG[] PROGMEM = {
-  // วัน-เพ็ญ-เดือน-สิบ-สอง / น้ำ-ก็-นอง-เต็ม-ตลิ่ง
-  {NOTE_A4, N_EIGHTH}, {NOTE_A4, N_EIGHTH}, {NOTE_C5, N_EIGHTH}, {NOTE_A4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_E4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_A4, N_QUARTER},
-  // เรา-ทั้ง-หลาย-ชาย-หญิง
-  {NOTE_C5, N_EIGHTH}, {NOTE_C5, N_EIGHTH}, {NOTE_D5, N_EIGHTH}, {NOTE_C5, N_EIGHTH}, {NOTE_A4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_A4, N_QUARTER},
-  // ส-นุก-กัน-จริง-วัน-ลอย-กระ-ทง
-  {NOTE_D5, N_EIGHTH}, {NOTE_D5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_D5, N_EIGHTH}, {NOTE_C5, N_EIGHTH}, {NOTE_A4, N_EIGHTH}, {NOTE_C5, N_EIGHTH}, {NOTE_D5, N_QUARTER},
-  // ลอย ลอย กระทง (บุญจะส่งให้เราสุขใจ)
-  {NOTE_C5, N_EIGHTH}, {NOTE_A4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_E4, N_EIGHTH}, {NOTE_D4, N_EIGHTH}, {NOTE_E4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_A4, N_HALF}
+  {NOTE_A4, N_EIGHTH, DYN_MF}, {NOTE_A4, N_EIGHTH, DYN_MP}, {NOTE_C5, N_EIGHTH, DYN_MF}, {NOTE_A4, N_EIGHTH, DYN_MP}, {NOTE_G4, N_EIGHTH, DYN_MP}, {NOTE_E4, N_EIGHTH, DYN_MP}, {NOTE_G4, N_EIGHTH, DYN_MF}, {NOTE_A4, N_QUARTER, DYN_F},
+  {NOTE_C5, N_EIGHTH, DYN_MF}, {NOTE_C5, N_EIGHTH, DYN_MP}, {NOTE_D5, N_EIGHTH, DYN_F},  {NOTE_C5, N_EIGHTH, DYN_MF}, {NOTE_A4, N_EIGHTH, DYN_MF}, {NOTE_G4, N_EIGHTH, DYN_MP}, {NOTE_A4, N_QUARTER, DYN_F},
+  {NOTE_D5, N_EIGHTH, DYN_F},  {NOTE_D5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_EIGHTH, DYN_F},  {NOTE_D5, N_EIGHTH, DYN_MF}, {NOTE_C5, N_EIGHTH, DYN_MF}, {NOTE_A4, N_EIGHTH, DYN_MF}, {NOTE_C5, N_EIGHTH, DYN_MF}, {NOTE_D5, N_QUARTER, DYN_F},
+  {NOTE_C5, N_EIGHTH, DYN_MF}, {NOTE_A4, N_EIGHTH, DYN_MP}, {NOTE_G4, N_EIGHTH, DYN_MP}, {NOTE_E4, N_EIGHTH, DYN_MP}, {NOTE_D4, N_EIGHTH, DYN_MP}, {NOTE_E4, N_EIGHTH, DYN_MF}, {NOTE_G4, N_EIGHTH, DYN_MF}, {NOTE_A4, N_HALF,    DYN_F}
 };
 
 // ============================================================================
-// 2. หมวดเพลงระดับโลก & ไวรัล (WORLD FAMOUS THEMES & HOOKS)
+// 2. หมวดเพลงระดับโลก & ไวรัล (WORLD THEMES)
 // ============================================================================
 
-// 🍄 2.1 Super Mario Bros Ground Theme (Nintendo Original)
+// 🍄 2.1 Super Mario Bros Ground Theme
 const Note SONG_MARIO[] PROGMEM = {
-  // อินโทรเปิดตัวอันโด่งดัง
-  {NOTE_E5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {REST, N_EIGHTH}, {NOTE_E5, N_EIGHTH},
-  {REST, N_EIGHTH},    {NOTE_C5, N_EIGHTH}, {NOTE_E5, N_QUARTER},
-  {NOTE_G5, N_QUARTER}, {REST, N_QUARTER}, {NOTE_G4, N_HALF},
+  {NOTE_E5, N_EIGHTH, DYN_F},  {NOTE_E5, N_EIGHTH, DYN_F}, {REST, N_EIGHTH, DYN_AUTO}, {NOTE_E5, N_EIGHTH, DYN_F},
+  {REST, N_EIGHTH, DYN_AUTO},  {NOTE_C5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_QUARTER, DYN_F},
+  {NOTE_G5, N_QUARTER, DYN_F}, {REST, N_QUARTER, DYN_AUTO}, {NOTE_G4, N_HALF, DYN_MF},
 
-  // ท่อนฮุคหลัก (โด - ซอล - มี)
-  {NOTE_C5, N_DOTTED_QUARTER}, {NOTE_G4, N_DOTTED_QUARTER}, {NOTE_E4, N_DOTTED_QUARTER},
-  {NOTE_A4, N_QUARTER}, {NOTE_B4, N_QUARTER}, {NOTE_AS4, N_EIGHTH}, {NOTE_A4, N_QUARTER},
-  {NOTE_G4, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_G5, N_EIGHTH}, {NOTE_A5, N_QUARTER}
+  {NOTE_C5, N_DOTTED_QUARTER, DYN_F}, {NOTE_G4, N_DOTTED_QUARTER, DYN_MF}, {NOTE_E4, N_DOTTED_QUARTER, DYN_MF},
+  {NOTE_A4, N_QUARTER, DYN_F},  {NOTE_B4, N_QUARTER, DYN_F}, {NOTE_AS4, N_EIGHTH, DYN_MF}, {NOTE_A4, N_QUARTER, DYN_F},
+  {NOTE_G4, N_EIGHTH, DYN_MF},  {NOTE_E5, N_EIGHTH, DYN_MF}, {NOTE_G5, N_EIGHTH, DYN_F},  {NOTE_A5, N_QUARTER, DYN_F}
 };
 
-// 🕺 2.2 Coffin Dance (Astronomia - ไวรัลแดนซ์ 126 BPM)
+// 🕺 2.2 Coffin Dance (Astronomia)
 const Note SONG_COFFIN[] PROGMEM = {
-  // ท่อนสับอินโทร
-  {NOTE_A4, N_EIGHTH}, {NOTE_A4, N_EIGHTH}, {NOTE_A4, N_EIGHTH}, {NOTE_A4, N_EIGHTH},
-  {NOTE_C5, N_EIGHTH}, {NOTE_B4, N_EIGHTH}, {NOTE_A4, N_EIGHTH}, {NOTE_G4, N_EIGHTH},
-  {NOTE_A4, N_EIGHTH}, {NOTE_A4, N_EIGHTH}, {NOTE_A4, N_EIGHTH}, {NOTE_A4, N_EIGHTH},
-  {NOTE_C5, N_EIGHTH}, {NOTE_B4, N_EIGHTH}, {NOTE_A4, N_EIGHTH}, {NOTE_G4, N_EIGHTH},
+  {NOTE_A4, N_EIGHTH, DYN_MF}, {NOTE_A4, N_EIGHTH, DYN_MP}, {NOTE_A4, N_EIGHTH, DYN_MF}, {NOTE_A4, N_EIGHTH, DYN_MP},
+  {NOTE_C5, N_EIGHTH, DYN_F},  {NOTE_B4, N_EIGHTH, DYN_MF}, {NOTE_A4, N_EIGHTH, DYN_MF}, {NOTE_G4, N_EIGHTH, DYN_MP},
+  {NOTE_A4, N_EIGHTH, DYN_MF}, {NOTE_A4, N_EIGHTH, DYN_MP}, {NOTE_A4, N_EIGHTH, DYN_MF}, {NOTE_A4, N_EIGHTH, DYN_MP},
+  {NOTE_C5, N_EIGHTH, DYN_F},  {NOTE_B4, N_EIGHTH, DYN_MF}, {NOTE_A4, N_EIGHTH, DYN_MF}, {NOTE_G4, N_EIGHTH, DYN_MP},
 
-  // ท่อนดรอป EDM
-  {NOTE_C5, N_EIGHTH}, {NOTE_C5, N_EIGHTH}, {NOTE_C5, N_EIGHTH}, {NOTE_C5, N_EIGHTH},
-  {NOTE_E5, N_EIGHTH}, {NOTE_D5, N_EIGHTH}, {NOTE_C5, N_EIGHTH}, {NOTE_B4, N_EIGHTH},
-  {NOTE_C5, N_EIGHTH}, {NOTE_C5, N_EIGHTH}, {NOTE_C5, N_EIGHTH}, {NOTE_C5, N_EIGHTH},
-  {NOTE_D5, N_EIGHTH}, {NOTE_C5, N_EIGHTH}, {NOTE_B4, N_EIGHTH}, {NOTE_A4, N_HALF}
+  {NOTE_C5, N_EIGHTH, DYN_F},  {NOTE_C5, N_EIGHTH, DYN_MF}, {NOTE_C5, N_EIGHTH, DYN_F},  {NOTE_C5, N_EIGHTH, DYN_MF},
+  {NOTE_E5, N_EIGHTH, DYN_F},  {NOTE_D5, N_EIGHTH, DYN_MF}, {NOTE_C5, N_EIGHTH, DYN_MF}, {NOTE_B4, N_EIGHTH, DYN_MP},
+  {NOTE_C5, N_EIGHTH, DYN_F},  {NOTE_C5, N_EIGHTH, DYN_MF}, {NOTE_C5, N_EIGHTH, DYN_F},  {NOTE_C5, N_EIGHTH, DYN_MF},
+  {NOTE_D5, N_EIGHTH, DYN_F},  {NOTE_C5, N_EIGHTH, DYN_MF}, {NOTE_B4, N_EIGHTH, DYN_MP}, {NOTE_A4, N_HALF,    DYN_F}
 };
 
-// 🦈 2.3 Baby Shark (เบบี้ชาร์ค ดู ดู๊ ดู ดู ดู ดู๊)
+// 🦈 2.3 Baby Shark
 const Note SONG_BABYSHARK[] PROGMEM = {
-  {NOTE_D4, N_QUARTER}, {NOTE_E4, N_QUARTER},
-  {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {REST, N_SIXTEENTH},
-  {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_SIXTEENTH}, {NOTE_G4, N_SIXTEENTH},
+  {NOTE_D4, N_QUARTER, DYN_MF}, {NOTE_E4, N_QUARTER, DYN_MF},
+  {NOTE_G4, N_EIGHTH, DYN_F},  {NOTE_G4, N_EIGHTH, DYN_MF}, {NOTE_G4, N_EIGHTH, DYN_MF}, {REST, N_SIXTEENTH, DYN_AUTO},
+  {NOTE_G4, N_EIGHTH, DYN_F},  {NOTE_G4, N_EIGHTH, DYN_MF}, {NOTE_G4, N_EIGHTH, DYN_MF}, {NOTE_G4, N_SIXTEENTH, DYN_MP}, {NOTE_G4, N_SIXTEENTH, DYN_MP},
 
-  {NOTE_D4, N_QUARTER}, {NOTE_E4, N_QUARTER},
-  {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {REST, N_SIXTEENTH},
-  {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_SIXTEENTH}, {NOTE_G4, N_SIXTEENTH},
+  {NOTE_D4, N_QUARTER, DYN_MF}, {NOTE_E4, N_QUARTER, DYN_MF},
+  {NOTE_G4, N_EIGHTH, DYN_F},  {NOTE_G4, N_EIGHTH, DYN_MF}, {NOTE_G4, N_EIGHTH, DYN_MF}, {REST, N_SIXTEENTH, DYN_AUTO},
+  {NOTE_G4, N_EIGHTH, DYN_F},  {NOTE_G4, N_EIGHTH, DYN_MF}, {NOTE_G4, N_EIGHTH, DYN_MF}, {NOTE_G4, N_SIXTEENTH, DYN_MP}, {NOTE_G4, N_SIXTEENTH, DYN_MP},
 
-  {NOTE_D4, N_QUARTER}, {NOTE_E4, N_QUARTER},
-  {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {REST, N_SIXTEENTH},
-  {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_G4, N_SIXTEENTH}, {NOTE_G4, N_SIXTEENTH},
+  {NOTE_D4, N_QUARTER, DYN_MF}, {NOTE_E4, N_QUARTER, DYN_MF},
+  {NOTE_G4, N_EIGHTH, DYN_F},  {NOTE_G4, N_EIGHTH, DYN_MF}, {NOTE_G4, N_EIGHTH, DYN_MF}, {REST, N_SIXTEENTH, DYN_AUTO},
+  {NOTE_G4, N_EIGHTH, DYN_F},  {NOTE_G4, N_EIGHTH, DYN_MF}, {NOTE_G4, N_EIGHTH, DYN_MF}, {NOTE_G4, N_SIXTEENTH, DYN_MP}, {NOTE_G4, N_SIXTEENTH, DYN_MP},
 
-  // เบบี้ชาร์ค!
-  {NOTE_G4, N_QUARTER}, {NOTE_G4, N_QUARTER}, {NOTE_FS4, N_HALF}
+  {NOTE_G4, N_QUARTER, DYN_F}, {NOTE_G4, N_QUARTER, DYN_F}, {NOTE_FS4, N_HALF, DYN_F}
 };
 
-// 🎂 2.4 Happy Birthday (สุขสันต์วันเกิด ครบ 4 วรรคสมบูรณ์แบบ)
+// 🎂 2.4 Happy Birthday
 const Note SONG_HBD[] PROGMEM = {
-  // แฮปปี้เบิร์ธเดย์ทูยู
-  {NOTE_C4, N_DOTTED_EIGHTH}, {NOTE_C4, N_SIXTEENTH}, {NOTE_D4, N_QUARTER}, {NOTE_C4, N_QUARTER}, {NOTE_F4, N_QUARTER}, {NOTE_E4, N_HALF},
-  // แฮปปี้เบิร์ธเดย์ทูยู
-  {NOTE_C4, N_DOTTED_EIGHTH}, {NOTE_C4, N_SIXTEENTH}, {NOTE_D4, N_QUARTER}, {NOTE_C4, N_QUARTER}, {NOTE_G4, N_QUARTER}, {NOTE_F4, N_HALF},
-  // แฮปปี้เบิร์ธเดย์ แดร์...
-  {NOTE_C4, N_DOTTED_EIGHTH}, {NOTE_C4, N_SIXTEENTH}, {NOTE_C5, N_QUARTER}, {NOTE_A4, N_QUARTER}, {NOTE_F4, N_QUARTER}, {NOTE_E4, N_QUARTER}, {NOTE_D4, N_HALF},
-  // แฮปปี้เบิร์ธเดย์ทูยู
-  {NOTE_AS4, N_DOTTED_EIGHTH}, {NOTE_AS4, N_SIXTEENTH}, {NOTE_A4, N_QUARTER}, {NOTE_F4, N_QUARTER}, {NOTE_G4, N_QUARTER}, {NOTE_F4, N_WHOLE}
+  {NOTE_C4, N_DOTTED_EIGHTH, DYN_MP}, {NOTE_C4, N_SIXTEENTH, DYN_P},  {NOTE_D4, N_QUARTER, DYN_MF}, {NOTE_C4, N_QUARTER, DYN_MP}, {NOTE_F4, N_QUARTER, DYN_F},  {NOTE_E4, N_HALF, DYN_F},
+  {NOTE_C4, N_DOTTED_EIGHTH, DYN_MP}, {NOTE_C4, N_SIXTEENTH, DYN_P},  {NOTE_D4, N_QUARTER, DYN_MF}, {NOTE_C4, N_QUARTER, DYN_MP}, {NOTE_G4, N_QUARTER, DYN_F},  {NOTE_F4, N_HALF, DYN_F},
+  {NOTE_C4, N_DOTTED_EIGHTH, DYN_MP}, {NOTE_C4, N_SIXTEENTH, DYN_P},  {NOTE_C5, N_QUARTER, DYN_F},  {NOTE_A4, N_QUARTER, DYN_F},  {NOTE_F4, N_QUARTER, DYN_MF}, {NOTE_E4, N_QUARTER, DYN_MF}, {NOTE_D4, N_HALF, DYN_MF},
+  {NOTE_AS4, N_DOTTED_EIGHTH, DYN_MF},{NOTE_AS4, N_SIXTEENTH, DYN_MP}, {NOTE_A4, N_QUARTER, DYN_F},  {NOTE_F4, N_QUARTER, DYN_MF}, {NOTE_G4, N_QUARTER, DYN_F},  {NOTE_F4, N_WHOLE, DYN_F}
 };
 
-// ⚔️ 2.5 Star Wars - The Imperial March (ธีม Darth Vader ทรงพลัง)
+// ⚔️ 2.5 Star Wars - The Imperial March
 const Note SONG_STARWARS[] PROGMEM = {
-  {NOTE_A4, N_QUARTER}, {NOTE_A4, N_QUARTER}, {NOTE_A4, N_QUARTER},
-  {NOTE_F4, N_DOTTED_EIGHTH}, {NOTE_C5, N_SIXTEENTH}, {NOTE_A4, N_QUARTER},
-  {NOTE_F4, N_DOTTED_EIGHTH}, {NOTE_C5, N_SIXTEENTH}, {NOTE_A4, N_HALF},
+  {NOTE_A4, N_QUARTER, DYN_F}, {NOTE_A4, N_QUARTER, DYN_F}, {NOTE_A4, N_QUARTER, DYN_F},
+  {NOTE_F4, N_DOTTED_EIGHTH, DYN_MF}, {NOTE_C5, N_SIXTEENTH, DYN_MP}, {NOTE_A4, N_QUARTER, DYN_F},
+  {NOTE_F4, N_DOTTED_EIGHTH, DYN_MF}, {NOTE_C5, N_SIXTEENTH, DYN_MP}, {NOTE_A4, N_HALF, DYN_F},
 
-  {NOTE_E5, N_QUARTER}, {NOTE_E5, N_QUARTER}, {NOTE_E5, N_QUARTER},
-  {NOTE_F5, N_DOTTED_EIGHTH}, {NOTE_C5, N_SIXTEENTH}, {NOTE_GS4, N_QUARTER},
-  {NOTE_F4, N_DOTTED_EIGHTH}, {NOTE_C5, N_SIXTEENTH}, {NOTE_A4, N_HALF}
+  {NOTE_E5, N_QUARTER, DYN_F}, {NOTE_E5, N_QUARTER, DYN_F}, {NOTE_E5, N_QUARTER, DYN_F},
+  {NOTE_F5, N_DOTTED_EIGHTH, DYN_MF}, {NOTE_C5, N_SIXTEENTH, DYN_MP}, {NOTE_GS4, N_QUARTER, DYN_F},
+  {NOTE_F4, N_DOTTED_EIGHTH, DYN_MF}, {NOTE_C5, N_SIXTEENTH, DYN_MP}, {NOTE_A4, N_HALF, DYN_F}
 };
 
-// 🔔 2.6 โดราเอมอน (Doraemon - อัง อัง อัง โตเดโมะ ดาอิซูคิ โดราเอมอน)
+// 🔔 2.6 โดราเอมอน
 const Note SONG_DORAEMON[] PROGMEM = {
-  {NOTE_C5, N_QUARTER}, {NOTE_D5, N_QUARTER}, {NOTE_E5, N_QUARTER}, {NOTE_G5, N_QUARTER},
-  {NOTE_A5, N_DOTTED_QUARTER}, {NOTE_G5, N_QUARTER}, {NOTE_E5, N_HALF},
-  {NOTE_C5, N_QUARTER}, {NOTE_D5, N_QUARTER}, {NOTE_E5, N_QUARTER}, {NOTE_D5, N_HALF}
+  {NOTE_C5, N_QUARTER, DYN_MF}, {NOTE_D5, N_QUARTER, DYN_MF}, {NOTE_E5, N_QUARTER, DYN_F},  {NOTE_G5, N_QUARTER, DYN_F},
+  {NOTE_A5, N_DOTTED_QUARTER, DYN_F}, {NOTE_G5, N_QUARTER, DYN_MF}, {NOTE_E5, N_HALF, DYN_F},
+  {NOTE_C5, N_QUARTER, DYN_MF}, {NOTE_D5, N_QUARTER, DYN_MF}, {NOTE_E5, N_QUARTER, DYN_F},  {NOTE_D5, N_HALF, DYN_F}
 };
 
-// 🎸 2.7 Seven Nation Army (The White Stripes - ร็อคริฟฟ์ก้องโลก)
+// 🎸 2.7 Seven Nation Army
 const Note SONG_SEVEN[] PROGMEM = {
-  {NOTE_E4, N_DOTTED_QUARTER}, {NOTE_E4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_E4, N_EIGHTH}, {NOTE_D4, N_EIGHTH}, {NOTE_C4, N_HALF}, {NOTE_B3, N_HALF},
-  {NOTE_E4, N_DOTTED_QUARTER}, {NOTE_E4, N_EIGHTH}, {NOTE_G4, N_EIGHTH}, {NOTE_E4, N_EIGHTH}, {NOTE_D4, N_EIGHTH}, {NOTE_C4, N_HALF}, {NOTE_B3, N_HALF}
+  {NOTE_E4, N_DOTTED_QUARTER, DYN_F}, {NOTE_E4, N_EIGHTH, DYN_MP}, {NOTE_G4, N_EIGHTH, DYN_MF}, {NOTE_E4, N_EIGHTH, DYN_MP}, {NOTE_D4, N_EIGHTH, DYN_MP}, {NOTE_C4, N_HALF, DYN_F}, {NOTE_B3, N_HALF, DYN_F},
+  {NOTE_E4, N_DOTTED_QUARTER, DYN_F}, {NOTE_E4, N_EIGHTH, DYN_MP}, {NOTE_G4, N_EIGHTH, DYN_MF}, {NOTE_E4, N_EIGHTH, DYN_MP}, {NOTE_D4, N_EIGHTH, DYN_MP}, {NOTE_C4, N_HALF, DYN_F}, {NOTE_B3, N_HALF, DYN_F}
 };
 
-// ⭐ 2.8 Twinkle Twinkle Little Star (ดาวดวงน้อย)
+// ⭐ 2.8 Twinkle Twinkle Little Star
 const Note SONG_TWINKLE[] PROGMEM = {
-  {NOTE_C5, N_QUARTER}, {NOTE_C5, N_QUARTER}, {NOTE_G5, N_QUARTER}, {NOTE_G5, N_QUARTER},
-  {NOTE_A5, N_QUARTER}, {NOTE_A5, N_QUARTER}, {NOTE_G5, N_HALF},
-  {NOTE_F5, N_QUARTER}, {NOTE_F5, N_QUARTER}, {NOTE_E5, N_QUARTER}, {NOTE_E5, N_QUARTER},
-  {NOTE_D5, N_QUARTER}, {NOTE_D5, N_QUARTER}, {NOTE_C5, N_HALF}
+  {NOTE_C5, N_QUARTER, DYN_MF}, {NOTE_C5, N_QUARTER, DYN_MP}, {NOTE_G5, N_QUARTER, DYN_F},  {NOTE_G5, N_QUARTER, DYN_MF},
+  {NOTE_A5, N_QUARTER, DYN_F},  {NOTE_A5, N_QUARTER, DYN_MF}, {NOTE_G5, N_HALF,    DYN_F},
+  {NOTE_F5, N_QUARTER, DYN_MF}, {NOTE_F5, N_QUARTER, DYN_MP}, {NOTE_E5, N_QUARTER, DYN_MF}, {NOTE_E5, N_QUARTER, DYN_MP},
+  {NOTE_D5, N_QUARTER, DYN_MF}, {NOTE_D5, N_QUARTER, DYN_MP}, {NOTE_C5, N_HALF,    DYN_F}
 };
 
 // ============================================================================
-// 3. หมวดเสียงเอฟเฟกต์ (SOUND EFFECTS & CUES)
+// 3. หมวดเสียงเอฟเฟกต์ (SOUND EFFECTS)
 // ============================================================================
 const Note SFX_BEEP[] PROGMEM = {
-  {NOTE_E5, N_QUARTER}
+  {NOTE_E5, N_QUARTER, DYN_F}
 };
 
 const Note SFX_HAPPY[] PROGMEM = {
-  {NOTE_C5, N_EIGHTH}, {NOTE_G5, N_QUARTER}
+  {NOTE_C5, N_EIGHTH, DYN_MF}, {NOTE_G5, N_QUARTER, DYN_F}
 };
 
 const Note SFX_FANFARE[] PROGMEM = {
-  {NOTE_G4, N_EIGHTH}, {NOTE_C5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_G5, N_HALF}
+  {NOTE_G4, N_EIGHTH, DYN_MF}, {NOTE_C5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_EIGHTH, DYN_F}, {NOTE_G5, N_HALF, DYN_F}
 };
 
 const Note SFX_ALARM[] PROGMEM = {
-  {NOTE_A5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}, {NOTE_A5, N_EIGHTH}, {NOTE_E5, N_EIGHTH}
+  {NOTE_A5, N_EIGHTH, DYN_F}, {NOTE_E5, N_EIGHTH, DYN_F}, {NOTE_A5, N_EIGHTH, DYN_F}, {NOTE_E5, N_EIGHTH, DYN_F}
 };
 
 // ============================================================================
-// ตารางทะเบียนเพลง (SONG REGISTRY) - สไตล์ CS เพิ่มเพลงใหม่ง่ายเพียง 1 บรรทัด!
+// ตารางทะเบียนเพลง (SONG REGISTRY)
 // ============================================================================
 const SongItem SONG_REGISTRY[] = {
   {"numalee",     "หนูมาลีมีลูกแมว", "recreation", "🐱", 135, 0.82f, SONG_NUMALEE,    sizeof(SONG_NUMALEE)    / sizeof(Note)},
@@ -363,9 +351,9 @@ const SongItem SONG_REGISTRY[] = {
 const size_t SONG_REGISTRY_COUNT = sizeof(SONG_REGISTRY) / sizeof(SongItem);
 
 // ============================================================================
-// NON-BLOCKING MELODY PLAYER ENGINE (Computer Science State Machine)
-// คำนวณเวลาอัตโนมัติจาก BPM และ Gate Ratio พร้อม Articulation Gap ขั้นต่ำ 30ms
-// ทำให้เสียงบัซเซอร์ทุกพยางค์ขับออกมาชัดเจน ไม่มีการกลืนเสียงกัน 100%
+// EXPRESSIVE ACOUSTIC MELODY SYNTHESIZER
+// สถาปัตยกรรมสังเคราะห์เสียงพร้อม Dynamic Velocity & Timbre Envelope Modulation
+// แปลงเสียงบัซเซอร์แบนๆ ให้มีความกังวาน นุ่มนวล มีไดนามิก และไพเราะสมจริง
 // ============================================================================
 class SongPlayer {
 public:
@@ -378,11 +366,32 @@ public:
     _noteIdx(0),
     _timer(0),
     _currentSoundMs(0),
-    _currentPauseMs(0) {}
+    _currentPauseMs(0),
+    _currentFreq(0),
+    _baseDuty(450),
+    _currentDuty(0),
+    _timbre(TIMBRE_MUSIC_BOX) {}
 
   void begin() {
     pinMode(_pin, OUTPUT);
-    noTone(_pin);
+    ledcAttach(_pin, 1000, 10); // 10-bit resolution (Duty 0..1023, 511 = 50% max volume)
+    _silence();
+  }
+
+  void setTimbre(InstrumentTimbre t) {
+    _timbre = t;
+  }
+
+  InstrumentTimbre timbre() const { return _timbre; }
+
+  const char* timbreName() const {
+    switch (_timbre) {
+      case TIMBRE_MUSIC_BOX: return "music_box";
+      case TIMBRE_VIBRATO:   return "vibrato";
+      case TIMBRE_ACOUSTIC:  return "acoustic";
+      case TIMBRE_CHIPTUNE:  return "chiptune";
+      default:               return "music_box";
+    }
   }
 
   bool playById(const char* id) {
@@ -404,7 +413,7 @@ public:
   }
 
   void stop() {
-    noTone(_pin);
+    _silence();
     _state = IDLE;
     _song = nullptr;
     _noteIdx = 0;
@@ -415,14 +424,19 @@ public:
 
     unsigned long now = millis();
     if (_state == SOUNDING) {
-      if (now - _timer >= _currentSoundMs) {
-        noTone(_pin);
+      unsigned long elapsed = now - _timer;
+
+      if (elapsed >= _currentSoundMs) {
+        _silence();
         if (_currentPauseMs > 0) {
           _state = PAUSING;
           _timer = now;
         } else {
           _advanceNote();
         }
+      } else {
+        // Real-time Dynamic Envelope & Timbre Modulation (ความไพเราะ & ไดนามิก)
+        _modulateEnvelope(elapsed);
       }
     } else if (_state == PAUSING) {
       if (now - _timer >= _currentPauseMs) {
@@ -437,7 +451,12 @@ public:
 
   void toneBeep(uint16_t freq, uint16_t durationMs) {
     stop();
-    tone(_pin, freq, durationMs);
+    if (freq > 0) {
+      ledcWriteTone(_pin, freq);
+      ledcWrite(_pin, 400);
+      delay(durationMs);
+      _silence();
+    }
   }
 
 private:
@@ -448,6 +467,15 @@ private:
   unsigned long _timer;
   uint32_t _currentSoundMs;
   uint32_t _currentPauseMs;
+  uint16_t _currentFreq;
+  uint32_t _baseDuty;
+  uint32_t _currentDuty;
+  InstrumentTimbre _timbre;
+
+  void _silence() {
+    ledcWriteTone(_pin, 0);
+    ledcWrite(_pin, 0);
+  }
 
   void _startCurrentNote() {
     if (!_song || _noteIdx >= _song->length) {
@@ -457,33 +485,98 @@ private:
 
     Note note;
     memcpy_P(&note, &_song->notes[_noteIdx], sizeof(Note));
+    _currentFreq = note.freq;
 
-    // คำนวณเวลาจาก BPM และสัดส่วนตัวโน้ต
-    // 1 Beat = 60000 / BPM (ms)
+    // คำนวณความยาวเวลาจาก BPM (1 Beat = 60000 / BPM ms)
     float oneBeatMs = 60000.0f / (float)_song->bpm;
     float totalNoteMs = note.beats * oneBeatMs;
 
     if (note.freq == REST) {
       _currentSoundMs = 0;
       _currentPauseMs = (uint32_t)totalNoteMs;
-      noTone(_pin);
+      _silence();
       _state = PAUSING;
       _timer = millis();
       return;
     }
 
-    // คำนวณ Gate Ratio เพื่อสร้างช่องไฟระหว่างตัวโน้ต (Articulation Gap)
-    // รับประกันว่าช่องว่างหยุดเสียงจะไม้น้อยกว่า 30ms เสมอ เพื่อให้แยกพยางค์ได้ชัด
-    float soundFraction = constrain(_song->gateRatio, 0.50f, 0.90f);
+    // คำนวณความดังเริ่มต้น (Dynamic Velocity)
+    uint8_t dyn = note.dyn;
+    if (dyn == DYN_AUTO) {
+      if (note.beats >= 2.0f)      dyn = DYN_F;  // โน้ตยาว / ท้ายประโยค = ก้องกังวาน (Forte)
+      else if (note.beats >= 1.0f) dyn = DYN_MF; // ตัวดำ = ชัดเจน (Mezzo-forte)
+      else                         dyn = DYN_MP; // โน้ตสั้น = นุ่มนวล (Mezzo-piano)
+    }
+
+    switch (dyn) {
+      case DYN_P:  _baseDuty = 180; break; // เบา นุ่ม
+      case DYN_MP: _baseDuty = 280; break; // ปานกลางค่อนข้างเบา
+      case DYN_MF: _baseDuty = 390; break; // ชัดเจนกำลังดี
+      case DYN_F:
+      default:     _baseDuty = 490; break; // หนักแน่น พุ่งกังวาน (Max 511)
+    }
+
+    // Articulation Gate Ratio (เว้นวรรคช่องไฟขั้นต่ำ 32ms เสมอ)
+    float soundFraction = constrain(_song->gateRatio, 0.60f, 0.88f);
     _currentSoundMs = (uint32_t)(totalNoteMs * soundFraction);
     _currentPauseMs = (uint32_t)(totalNoteMs - _currentSoundMs);
-    if (_currentPauseMs < 30) {
-      _currentPauseMs = 30;
-      if (_currentSoundMs > 30) _currentSoundMs -= 30;
+    if (_currentPauseMs < 32) {
+      _currentPauseMs = 32;
+      if (_currentSoundMs > 32) _currentSoundMs -= 32;
     }
 
     _timer = millis();
-    tone(_pin, note.freq);
+    ledcWriteTone(_pin, _currentFreq);
+    ledcWrite(_pin, _baseDuty);
+  }
+
+  // ปรับแต่งหางเสียง (Envelope) และความมีชีวิตชีวาของคลื่นเสียงตาม Timbre ที่เลือก
+  void _modulateEnvelope(unsigned long elapsed) {
+    if (_currentFreq == REST || _currentSoundMs == 0) return;
+    float progress = (float)elapsed / (float)_currentSoundMs; // 0.0 -> 1.0
+
+    switch (_timbre) {
+      case TIMBRE_MUSIC_BOX: {
+        // 🔔 กล่องดนตรี: เสียงเคาะกระดิ่งแก้ว แล้วค่อยๆ กังวานหรี่ลงอย่างนุ่มนวล
+        // Curve: Attack 100% -> ค่อยๆ คลายพลังงานลงเหลือ 25%
+        float decay = 1.0f - (progress * 0.72f);
+        uint32_t duty = (uint32_t)(_baseDuty * decay);
+        if (duty < 40) duty = 40;
+        ledcWrite(_pin, duty);
+        break;
+      }
+
+      case TIMBRE_VIBRATO: {
+        // 🎻 เสียงร้องมีลูกคอ: โน้ตที่ลากยาวเกิน 300ms จะมีลูกคอพริ้วหวาน (LFO Vibrato 5.5 Hz)
+        if (_currentSoundMs >= 300 && elapsed >= 160) {
+          float lfoPhase = (float)(elapsed - 160) * 0.035f; // ~5.5 Hz
+          float pitchOffset = sin(lfoPhase) * (_currentFreq * 0.012f); // ±1.2% micro-pitch
+          ledcWriteTone(_pin, (uint32_t)(_currentFreq + pitchOffset));
+        }
+        // รักษาระดับเสียงนิ่ง อบอุ่น
+        ledcWrite(_pin, _baseDuty);
+        break;
+      }
+
+      case TIMBRE_ACOUSTIC: {
+        // 🎹 เปียโน/คาลิมบา: ดีดหัวโน้ตคมชัด (Pluck) แล้วคงเสียง sustain อุ่นๆ
+        uint32_t duty = _baseDuty;
+        if (progress > 0.15f) {
+          float decay = 1.0f - ((progress - 0.15f) * 0.55f);
+          duty = (uint32_t)(_baseDuty * decay);
+        }
+        if (duty < 60) duty = 60;
+        ledcWrite(_pin, duty);
+        break;
+      }
+
+      case TIMBRE_CHIPTUNE:
+      default: {
+        // 👾 เกม 8-บิต: Square wave แท้ ยึดตาม Dynamic Velocity หนัก-เบา
+        ledcWrite(_pin, _baseDuty);
+        break;
+      }
+    }
   }
 
   void _advanceNote() {

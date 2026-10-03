@@ -45,6 +45,7 @@ void handleTelemetry() {
   json += "\"mode\":\"" + String(recreationEngine.modeString()) + "\",";
   json += "\"dir\":\"" + String(motorController.directionString()) + "\",";
   json += "\"face\":\"" + String(faceEngine.currentFace().id) + "\",";
+  json += "\"timbre\":\"" + String(songPlayer.timbreName()) + "\",";
   json += "\"isPlaying\":" + String(songPlayer.isPlaying() ? "true" : "false");
   json += "}";
   server.send(200, "application/json", json);
@@ -121,6 +122,16 @@ void handleAction() {
     } else {
       songPlayer.playById(cmd.c_str());
     }
+    server.send(200, "text/plain", "OK");
+    return;
+  }
+
+  // 4.1 Timbre / Instrument selection
+  if (type == "timbre") {
+    if (cmd == "music_box") songPlayer.setTimbre(TIMBRE_MUSIC_BOX);
+    else if (cmd == "vibrato") songPlayer.setTimbre(TIMBRE_VIBRATO);
+    else if (cmd == "acoustic") songPlayer.setTimbre(TIMBRE_ACOUSTIC);
+    else if (cmd == "chiptune") songPlayer.setTimbre(TIMBRE_CHIPTUNE);
     server.send(200, "text/plain", "OK");
     return;
   }

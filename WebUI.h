@@ -476,6 +476,17 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
       <button class="filter-tab" onclick="filterSongs('game')">🎮 เกม</button>
       <button class="filter-tab" onclick="filterSongs('sfx')">🔊 เอฟเฟกต์</button>
     </div>
+
+    <!-- Timbre / Instrument Sound Selector -->
+    <div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; margin-top:4px; letter-spacing:0.5px;">
+      🎼 โหมดเสียงเครื่องดนตรี (Sound Timbre & Envelope)
+    </div>
+    <div class="filter-tabs" id="timbreTabs">
+      <button class="filter-tab active" data-timbre="music_box" onclick="setTimbre('music_box')">🔔 กล่องดนตรี (ใสกังวาน)</button>
+      <button class="filter-tab" data-timbre="vibrato" onclick="setTimbre('vibrato')">🎻 ร้องลูกคอ (พริ้วหวาน)</button>
+      <button class="filter-tab" data-timbre="acoustic" onclick="setTimbre('acoustic')">🎹 เปียโน/คาลิมบา</button>
+      <button class="filter-tab" data-timbre="chiptune" onclick="setTimbre('chiptune')">👾 8-Bit เกมบอย</button>
+    </div>
     <div class="catalog-grid" id="songsContainer">
       <!-- Dynamically populated from /api/catalog -->
       <div style="grid-column:span 2; font-size:12px; color:var(--text-muted); text-align:center; padding:12px;">กำลังโหลดรายการเพลง...</div>
@@ -540,6 +551,14 @@ function setMode(mode) {
 function startShowcase(songId, motionId) {
   sendCmd('showcase', songId, `&motion=${encodeURIComponent(motionId)}`);
   showToast('เริ่มการแสดง: ' + songId);
+}
+
+function setTimbre(timbre) {
+  sendCmd('timbre', timbre);
+  document.querySelectorAll('#timbreTabs .filter-tab').forEach(b => b.classList.remove('active'));
+  const target = document.querySelector(`#timbreTabs .filter-tab[data-timbre="${timbre}"]`);
+  if (target) target.classList.add('active');
+  showToast('เปลี่ยนเสียงดนตรี: ' + timbre);
 }
 
 // Render dynamic catalog without hardcoding
