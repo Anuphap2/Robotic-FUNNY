@@ -6,230 +6,246 @@
 #include <Adafruit_SH110X.h>
 #include <ESP32Servo.h>
 
-#include "webpage.h"
+#include "Config.h"
+#include "SongSystem.h"
+#include "FaceSystem.h"
+#include "MotionSystem.h"
+#include "MotorController.h"
+#include "SensorManager.h"
+#include "RecreationEngine.h"
+#include "WebUI.h"
 
-// ================= ตั้งค่า Wi-Fi =================
-const char* ssid     = "Why na";
-const char* password = "12345678";
-
+// ============================================================================
+// SYSTEM INSTANCES (Computer Science Object-Oriented Architecture)
+// ============================================================================
 WebServer server(80);
 
-// ================= กำหนดขาพินอุปกรณ์ =================
-#define i2c_Address 0x3C
-Adafruit_SH1106G display = Adafruit_SH1106G(128, 64, &Wire, -1);
+FaceEngine        faceEngine;
+SongPlayer        songPlayer(PIN_BUZZER);
+MotionPlayer      motionPlayer;
+MotorController   motorController;
+SensorManager     sensorManager;
+RecreationEngine  recreationEngine(faceEngine, songPlayer, motionPlayer, motorController, sensorManager);
 
-const int PIN_TRIG   = 5;
-const int PIN_ECHO   = 17;
-const int PIN_BUZZER = 25;
-const int PIN_MIC_AO = 34;
+// ============================================================================
+// WEB SERVER API HANDLERS
+// ============================================================================
 
-const int PIN_SERVO_HEAD  = 18;
-const int PIN_SERVO_ARM_L = 19;
-const int PIN_SERVO_ARM_R = 23;
-
-Servo servoHead;
-Servo servoArmL;
-Servo servoArmR;
-
-const int PIN_A1A = 26; // มอเตอร์ซ้าย A
-const int PIN_A1B = 27; // มอเตอร์ซ้าย B
-const int PIN_B1A = 14; // มอเตอร์ขวา A
-const int PIN_B1B = 12; // มอเตอร์ขวา B
-
-// *** include robot_content.h ตรงนี้ เพื่อให้มองเห็น PIN_BUZZER และ Servos แน่นอน 100% ***
-#include "robot_content.h"
-
-// ================= ตัวแปรและสถานะระบบ =================
-int micBaseline = 2000;
-int currentVol = 0;
-float currentDistance = 0.0;
-unsigned long lastSensorRead = 0;
-
-// ================= ฟังก์ชันควบคุมล้อ L9110S =================
-void motorStop() {
-  digitalWrite(PIN_A1A, LOW); digitalWrite(PIN_A1B, LOW);
-  digitalWrite(PIN_B1A, LOW); digitalWrite(PIN_B1B, LOW);
-}
-void moveForward() {
-  digitalWrite(PIN_A1A, HIGH); digitalWrite(PIN_A1B, LOW);
-  digitalWrite(PIN_B1A, HIGH); digitalWrite(PIN_B1B, LOW);
-}
-void moveBackward() {
-  digitalWrite(PIN_A1A, LOW); digitalWrite(PIN_A1B, HIGH);
-  digitalWrite(PIN_B1A, LOW); digitalWrite(PIN_B1B, HIGH);
-}
-void turnLeft() {
-  digitalWrite(PIN_A1A, LOW); digitalWrite(PIN_A1B, HIGH);
-  digitalWrite(PIN_B1A, HIGH); digitalWrite(PIN_B1B, LOW);
-}
-void turnRight() {
-  digitalWrite(PIN_A1A, HIGH); digitalWrite(PIN_A1B, LOW);
-  digitalWrite(PIN_B1A, LOW); digitalWrite(PIN_B1B, HIGH);
-}
-
-// ================= ฟังก์ชันหน้าตา OLED =================
-void drawEyes(const String& expr) {
-  display.clearDisplay();
-  display.setTextColor(SH110X_WHITE);
-
-  if (expr == "happy") {
-    display.setTextSize(3);
-    display.setCursor(26, 20);
-    display.print("^  ^");
-  } else if (expr == "surprise") {
-    display.drawCircle(36, 28, 18, SH110X_WHITE);
-    display.drawCircle(92, 28, 18, SH110X_WHITE);
-    display.fillCircle(64, 48, 6, SH110X_WHITE);
-  } else if (expr == "blink") {
-    display.fillRect(20, 30, 32, 5, SH110X_WHITE);
-    display.fillRect(76, 30, 32, 5, SH110X_WHITE);
-  } else if (expr == "look_left") {
-    display.drawCircle(36, 30, 16, SH110X_WHITE);
-    display.drawCircle(92, 30, 16, SH110X_WHITE);
-    display.fillCircle(28, 30, 7, SH110X_WHITE);
-    display.fillCircle(84, 30, 7, SH110X_WHITE);
-  } else if (expr == "look_right") {
-    display.drawCircle(36, 30, 16, SH110X_WHITE);
-    display.drawCircle(92, 30, 16, SH110X_WHITE);
-    display.fillCircle(44, 30, 7, SH110X_WHITE);
-    display.fillCircle(100, 30, 7, SH110X_WHITE);
-  } else {
-    display.fillCircle(36, 30, 14, SH110X_WHITE);
-    display.fillCircle(92, 30, 14, SH110X_WHITE);
-  }
-
-  display.display();
-}
-
-// ================= ฟังก์ชันวัดระยะทาง Ultrasonic =================
-float getDistance() {
-  digitalWrite(PIN_TRIG, LOW);
-  delayMicroseconds(2);
-  digitalWrite(PIN_TRIG, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(PIN_TRIG, LOW);
-
-  long dur = pulseIn(PIN_ECHO, HIGH, 25000);
-  if (dur == 0) return -1.0;
-  return (dur * 0.0343) / 2.0;
-}
-
-// ================= WEB SERVER HANDLERS =================
+// Serve Modern Single Page Application
 void handleRoot() {
-  server.send(200, "text/html", MAIN_PAGE);
+  server.send_P(200, "text/html", DASHBOARD_HTML);
 }
 
+// Telemetry Endpoint: Real-time sensor and state metrics
 void handleTelemetry() {
-  String json = "{\"vol\":" + String(currentVol) + ",\"dist\":" + String(currentDistance, 1) + "}";
+  String json = "{";
+  json += "\"vol\":" + String(sensorManager.volume()) + ",";
+  json += "\"peak\":" + String(sensorManager.peakVolume()) + ",";
+  json += "\"dist\":" + String(sensorManager.distance(), 1) + ",";
+  json += "\"mode\":\"" + String(recreationEngine.modeString()) + "\",";
+  json += "\"dir\":\"" + String(motorController.directionString()) + "\",";
+  json += "\"face\":\"" + String(faceEngine.currentFace().id) + "\",";
+  json += "\"isPlaying\":" + String(songPlayer.isPlaying() ? "true" : "false");
+  json += "}";
   server.send(200, "application/json", json);
 }
 
-void handleAction() {
-  if (!server.hasArg("cmd")) {
-    server.send(400, "text/plain", "Missing cmd");
-    return;
+// Catalog Endpoint: Dynamically exposes all registered songs, faces, and motions
+// Adding any new song or face in C++ automatically reflects in the web UI!
+void handleCatalog() {
+  String json = "{\"songs\":[";
+  for (size_t i = 0; i < SONG_REGISTRY_COUNT; i++) {
+    json += "{\"id\":\"" + String(SONG_REGISTRY[i].id) + "\",";
+    json += "\"title\":\"" + String(SONG_REGISTRY[i].title) + "\",";
+    json += "\"cat\":\"" + String(SONG_REGISTRY[i].category) + "\",";
+    json += "\"icon\":\"" + String(SONG_REGISTRY[i].icon) + "\"}";
+    if (i + 1 < SONG_REGISTRY_COUNT) json += ",";
   }
-  String cmd = server.arg("cmd");
-
-  // 1. D-Pad ล้อรถ
-  if (cmd == "forward")       moveForward();
-  else if (cmd == "backward") moveBackward();
-  else if (cmd == "left")     turnLeft();
-  else if (cmd == "right")    turnRight();
-  else if (cmd == "stop")     motorStop();
-
-  // 2. หน้าตา OLED
-  else if (cmd == "normal" || cmd == "blink" || cmd == "happy" ||
-           cmd == "surprise" || cmd == "look_left" || cmd == "look_right") {
-    drawEyes(cmd);
+  json += "],\"faces\":[";
+  for (size_t i = 0; i < FACE_REGISTRY_COUNT; i++) {
+    json += "{\"id\":\"" + String(FACE_REGISTRY[i].id) + "\",";
+    json += "\"title\":\"" + String(FACE_REGISTRY[i].title) + "\",";
+    json += "\"icon\":\"" + String(FACE_REGISTRY[i].icon) + "\"}";
+    if (i + 1 < FACE_REGISTRY_COUNT) json += ",";
   }
-
-  // 3. ท่าทาง Servo Registry
-  else if (dispatchMotion(cmd)) {
-    // รันท่าทางเสร็จสิ้น
+  json += "],\"motions\":[";
+  for (size_t i = 0; i < MOTION_REGISTRY_COUNT; i++) {
+    json += "{\"id\":\"" + String(MOTION_REGISTRY[i].id) + "\",";
+    json += "\"title\":\"" + String(MOTION_REGISTRY[i].title) + "\",";
+    json += "\"icon\":\"" + String(MOTION_REGISTRY[i].icon) + "\"}";
+    if (i + 1 < MOTION_REGISTRY_COUNT) json += ",";
   }
+  json += "]}";
 
-  // 4. เพลง Jukebox Registry
-  else if (dispatchSong(cmd)) {
-    // เล่นเพลงเสร็จสิ้น
-  }
-
-  server.send(200, "text/plain", "OK");
+  server.send(200, "application/json", json);
 }
 
-// ================= SETUP =================
+// Action Dispatcher: Clean polymorphic command routing
+void handleAction() {
+  if (!server.hasArg("cmd")) {
+    server.send(400, "text/plain", "Missing cmd argument");
+    return;
+  }
+
+  String type = server.hasArg("type") ? server.arg("type") : "";
+  String cmd  = server.arg("cmd");
+
+  // 1. Motor / Direction commands
+  if (type == "motor" || cmd == "forward" || cmd == "backward" || cmd == "left" || cmd == "right" || cmd == "stop" || cmd == "spin") {
+    motorController.handleCommand(cmd);
+    server.send(200, "text/plain", "OK");
+    return;
+  }
+
+  // 2. Recreation Mode selection
+  if (type == "mode") {
+    if (cmd == "manual")      recreationEngine.setMode(MODE_MANUAL);
+    else if (cmd == "party")  recreationEngine.setMode(MODE_PARTY_BEAT);
+    else if (cmd == "interactive") recreationEngine.setMode(MODE_INTERACTIVE);
+    server.send(200, "text/plain", "OK");
+    return;
+  }
+
+  // 3. Synchronized Showcase performance (Song + Dance)
+  if (type == "showcase") {
+    String motionId = server.hasArg("motion") ? server.arg("motion") : "dance";
+    recreationEngine.startShowcase(cmd.c_str(), motionId.c_str());
+    server.send(200, "text/plain", "OK");
+    return;
+  }
+
+  // 4. Music & Sound commands
+  if (type == "song") {
+    if (cmd == "stop") {
+      songPlayer.stop();
+    } else {
+      songPlayer.playById(cmd.c_str());
+    }
+    server.send(200, "text/plain", "OK");
+    return;
+  }
+
+  // 5. Face / OLED Expression commands
+  if (type == "face") {
+    faceEngine.setFace(cmd.c_str());
+    server.send(200, "text/plain", "OK");
+    return;
+  }
+
+  // 6. Servo Motion commands
+  if (type == "motion") {
+    motionPlayer.playById(cmd.c_str());
+    server.send(200, "text/plain", "OK");
+    return;
+  }
+
+  // 7. Emergency Stop / Global reset
+  if (cmd == "stop_all" || (type == "system" && cmd == "stop_all")) {
+    motorController.stop();
+    songPlayer.stop();
+    motionPlayer.toCenter();
+    recreationEngine.setMode(MODE_MANUAL);
+    faceEngine.setFace("normal");
+    server.send(200, "text/plain", "OK");
+    return;
+  }
+
+  // Fallback Dispatcher for legacy / untyped queries
+  if (faceEngine.setFace(cmd.c_str())) {
+    server.send(200, "text/plain", "OK");
+    return;
+  }
+  if (songPlayer.playById(cmd.c_str())) {
+    server.send(200, "text/plain", "OK");
+    return;
+  }
+  if (motionPlayer.playById(cmd.c_str())) {
+    server.send(200, "text/plain", "OK");
+    return;
+  }
+
+  server.send(200, "text/plain", "Ignored");
+}
+
+// ============================================================================
+// SYSTEM SETUP
+// ============================================================================
 void setup() {
   Serial.begin(115200);
+  delay(100);
+  Serial.println("\n=============================================");
+  Serial.println("  🤖 SMART RECREATIONAL ROBOT INITIALIZING");
+  Serial.println("=============================================");
 
-  pinMode(PIN_TRIG, OUTPUT);
-  pinMode(PIN_ECHO, INPUT);
-  pinMode(PIN_MIC_AO, INPUT);
-  pinMode(PIN_BUZZER, OUTPUT);
-  noTone(PIN_BUZZER);
+  // Initialize Hardware Drivers
+  motorController.begin();
+  sensorManager.begin();
+  songPlayer.begin();
+  motionPlayer.begin();
 
-  pinMode(PIN_A1A, OUTPUT); pinMode(PIN_A1B, OUTPUT);
-  pinMode(PIN_B1A, OUTPUT); pinMode(PIN_B1B, OUTPUT);
-  motorStop();
+  // Initialize Display
+  if (!faceEngine.begin()) {
+    Serial.println("⚠️ Warning: SH1106 OLED Display not detected at 0x3C");
+  } else {
+    faceEngine.showBootMessage("Connecting WiFi...", WIFI_SSID);
+  }
 
-  Wire.begin(21, 22);
-  display.begin(i2c_Address, true);
-  display.clearDisplay();
-  display.setTextColor(SH110X_WHITE);
-  display.setTextSize(1);
-  display.setCursor(15, 24);
-  display.println("Connecting WiFi...");
-  display.display();
-
+  // Connect to Wi-Fi with timeout and fallback to SoftAP
   WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(300);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("Connecting to Wi-Fi: ");
+  Serial.print(WIFI_SSID);
+
+  unsigned long wifiStart = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - wifiStart < 7000) {
+    delay(250);
     Serial.print(".");
   }
 
-  Serial.println("\nWiFi Connected! IP: " + WiFi.localIP().toString());
-
-  server.on("/", handleRoot);
-  server.on("/telemetry", handleTelemetry);
-  server.on("/action", handleAction);
-  server.begin();
-
-  long sum = 0;
-  for (int i = 0; i < 100; i++) {
-    sum += analogRead(PIN_MIC_AO);
-    delay(5);
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\n[WiFi] Connected successfully!");
+    Serial.print("[WiFi] IP Address: ");
+    Serial.println(WiFi.localIP());
+    faceEngine.showBootMessage("WiFi Connected!", WiFi.localIP().toString().c_str());
+  } else {
+    Serial.println("\n[WiFi] Connection timed out. Starting Fallback SoftAP mode...");
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP(AP_SSID, AP_PASSWORD);
+    Serial.print("[WiFi AP] SSID: ");
+    Serial.println(AP_SSID);
+    Serial.print("[WiFi AP] IP Address: ");
+    Serial.println(WiFi.softAPIP());
+    faceEngine.showBootMessage("AP Mode: Robot-Recreation", WiFi.softAPIP().toString().c_str());
   }
-  micBaseline = sum / 100;
 
-  ESP32PWM::allocateTimer(0);
-  ESP32PWM::allocateTimer(1);
-  ESP32PWM::allocateTimer(2);
-  ESP32PWM::allocateTimer(3);
+  // Setup Web Server Endpoints
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/telemetry", HTTP_GET, handleTelemetry);
+  server.on("/api/catalog", HTTP_GET, handleCatalog);
+  server.on("/action", HTTP_GET, handleAction);
+  server.begin();
+  Serial.println("[Server] HTTP WebServer started on port 80");
 
-  servoHead.setPeriodHertz(50);
-  servoArmL.setPeriodHertz(50);
-  servoArmR.setPeriodHertz(50);
+  // Ready State
+  recreationEngine.begin();
+  delay(1200);
+  faceEngine.setFace("normal");
+  songPlayer.playById("sfx_happy");
 
-  servoHead.attach(PIN_SERVO_HEAD, 500, 2400);
-  servoArmL.attach(PIN_SERVO_ARM_L, 500, 2400);
-  servoArmR.attach(PIN_SERVO_ARM_R, 500, 2400);
-
-  servoHead.write(90);
-  servoArmL.write(30);
-  servoArmR.write(150);
-  drawEyes("normal");
-
-  tone(PIN_BUZZER, 2500); delay(100); noTone(PIN_BUZZER);
+  Serial.println("=============================================");
+  Serial.println("  🎉 RECREATIONAL ROBOT READY FOR ACTION!");
+  Serial.println("=============================================\n");
 }
 
-// ================= LOOP =================
+// ============================================================================
+// SYSTEM MAIN LOOP (Cooperative Non-blocking Multitasking)
+// ============================================================================
 void loop() {
   server.handleClient();
-
-  if (millis() - lastSensorRead >= 80) {
-    lastSensorRead = millis();
-    int rawAudio = analogRead(PIN_MIC_AO);
-    currentVol = abs(rawAudio - micBaseline);
-    currentDistance = getDistance();
-  }
+  sensorManager.update();
+  songPlayer.update();
+  motionPlayer.update();
+  motorController.update();
+  faceEngine.update();
+  recreationEngine.update();
 }
