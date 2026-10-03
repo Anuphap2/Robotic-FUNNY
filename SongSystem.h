@@ -108,10 +108,43 @@ struct SongItem {
 };
 
 // ============================================================================
-// 1. หมวดเพลงสันทนาการและเพลงไทยยอดนิยม (AUTHENTIC THAI RECREATION MELODIES)
+// 1. หมวดเพลงสันทนาการและเพลงไวรัล (AUTHENTIC RECREATION & VIRAL MELODIES)
 // ============================================================================
 
-// 🐱 1.1 หนูมาลีมีลูกแมวเหมียว (Mary Had a Little Lamb)
+// 🍦 1.1 เพลงมี่เสวี่ย (Mixue Ice Cream Theme Song - MuseScore 9369592)
+// "หนี่ อ้าย หว่อ, หว่อ อ้าย หนี่... มี่ เสวี่ย ปิง เฉิง เถียน มี่ มี่"
+const Note SONG_MIXUE[] PROGMEM = {
+  // วรรค 1: หนี่-อ้าย-หว่อ, หว่อ-อ้าย-หนี่ (Sol La Sol Mi | Sol La Sol Mi)
+  {NOTE_G5, N_EIGHTH, DYN_F},  {NOTE_A5, N_EIGHTH, DYN_MF}, {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_EIGHTH, DYN_MP},
+  {NOTE_G5, N_EIGHTH, DYN_F},  {NOTE_A5, N_EIGHTH, DYN_MF}, {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_QUARTER, DYN_F},
+
+  // วรรค 2: มี่-เสวี่ย-ปิง-เฉิง-เถียน-มี่-มี่ (Do Do Re Mi | Re - - -)
+  {NOTE_C5, N_EIGHTH, DYN_MF}, {NOTE_C5, N_EIGHTH, DYN_MP}, {NOTE_D5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_EIGHTH, DYN_F},
+  {NOTE_D5, N_HALF,    DYN_F}, {REST, N_QUARTER, DYN_AUTO},
+
+  // วรรค 3: หนี่-อ้าย-หว่อ, หว่อ-อ้าย-หนี่ (Sol La Sol Mi | Sol La Sol Mi)
+  {NOTE_G5, N_EIGHTH, DYN_F},  {NOTE_A5, N_EIGHTH, DYN_MF}, {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_EIGHTH, DYN_MP},
+  {NOTE_G5, N_EIGHTH, DYN_F},  {NOTE_A5, N_EIGHTH, DYN_MF}, {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_QUARTER, DYN_F},
+
+  // วรรค 4: มี่-เสวี่ย-ปิง-เฉิง-เถียน-มี่-มี่ (Re Mi Re Do | Do - - -)
+  {NOTE_D5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_EIGHTH, DYN_F},  {NOTE_D5, N_EIGHTH, DYN_MF}, {NOTE_C5, N_EIGHTH, DYN_MP},
+  {NOTE_C5, N_HALF,    DYN_F}, {REST, N_QUARTER, DYN_AUTO},
+
+  // วรรค 5: จังหวะเด้งดึ๋ง Interlude (ซอล ซอล ซอล ซอล)
+  {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_G5, N_EIGHTH, DYN_F},
+
+  // วรรค 6 (ร้องท่อนฮุคซ้ำแบบจัดเต็ม)
+  {NOTE_G5, N_EIGHTH, DYN_F},  {NOTE_A5, N_EIGHTH, DYN_MF}, {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_EIGHTH, DYN_MP},
+  {NOTE_G5, N_EIGHTH, DYN_F},  {NOTE_A5, N_EIGHTH, DYN_MF}, {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_QUARTER, DYN_F},
+  {NOTE_C5, N_EIGHTH, DYN_MF}, {NOTE_C5, N_EIGHTH, DYN_MP}, {NOTE_D5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_EIGHTH, DYN_F},
+  {NOTE_D5, N_HALF,    DYN_F}, {REST, N_QUARTER, DYN_AUTO},
+
+  // วรรค 7: ท่อนจบประทับใจ
+  {NOTE_D5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_EIGHTH, DYN_F},  {NOTE_D5, N_EIGHTH, DYN_MF}, {NOTE_C5, N_EIGHTH, DYN_MP},
+  {NOTE_C5, N_WHOLE,   DYN_F}
+};
+
+// 🐱 1.2 หนูมาลีมีลูกแมวเหมียว (Mary Had a Little Lamb)
 const Note SONG_NUMALEE[] PROGMEM = {
   // วรรค 1: หนู-มา-ลี-มี / ลูก-แมว-เหมียว
   {NOTE_E5, N_QUARTER, DYN_MF}, {NOTE_D5, N_QUARTER, DYN_MP}, {NOTE_C5, N_QUARTER, DYN_MP}, {NOTE_D5, N_QUARTER, DYN_MP},
@@ -132,7 +165,7 @@ const Note SONG_NUMALEE[] PROGMEM = {
   {NOTE_C5, N_DOTTED_HALF, DYN_F}, {REST, N_QUARTER, DYN_AUTO}
 };
 
-// 🐘 1.2 เพลงช้าง (เพลงเด็กและสันทนาการอันดับ 1 ของคนไทย)
+// 🐘 1.3 เพลงช้าง (เพลงเด็กและสันทนาการอันดับ 1 ของคนไทย)
 const Note SONG_CHANG[] PROGMEM = {
   // ช้าง-ช้าง-ช้าง
   {NOTE_G5, N_QUARTER, DYN_F},  {NOTE_G5, N_QUARTER, DYN_MF}, {NOTE_G5, N_HALF, DYN_F},
@@ -148,7 +181,7 @@ const Note SONG_CHANG[] PROGMEM = {
   {NOTE_G5, N_EIGHTH, DYN_MF},  {NOTE_A5, N_EIGHTH, DYN_F},  {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_EIGHTH, DYN_MP}, {NOTE_D5, N_QUARTER, DYN_MF}, {NOTE_C5, N_HALF, DYN_F}
 };
 
-// 🍗 1.3 เพลงไก่ย่างถูกเผา
+// 🍗 1.4 เพลงไก่ย่างถูกเผา
 const Note SONG_KAIYANG[] PROGMEM = {
   // ไก่-ย่าง-ถูก-เผา
   {NOTE_G5, N_EIGHTH, DYN_F}, {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_EIGHTH, DYN_MP}, {NOTE_G5, N_QUARTER, DYN_F},
@@ -173,34 +206,24 @@ const Note SONG_KAIYANG[] PROGMEM = {
   {NOTE_C5, N_EIGHTH, DYN_MF}, {NOTE_D5, N_EIGHTH, DYN_F},  {NOTE_C5, N_HALF,    DYN_F}
 };
 
-// 🍃 1.4 เพลงกิ่งก้านใบ
+// 🍃 1.5 เพลงกิ่งก้านใบ
 const Note SONG_KINGKANBAI[] PROGMEM = {
-  // กิ่ง-ก้าน-ใบ
   {NOTE_C5, N_QUARTER, DYN_MF}, {NOTE_D5, N_QUARTER, DYN_MF}, {NOTE_E5, N_HALF, DYN_F},
-  // ชะ-ชะ
   {NOTE_G5, N_EIGHTH, DYN_F},  {NOTE_G5, N_QUARTER, DYN_F},
-  // ใบ-ก้าน-กิ่ง
   {NOTE_E5, N_QUARTER, DYN_MF}, {NOTE_D5, N_QUARTER, DYN_MP}, {NOTE_C5, N_HALF, DYN_MF},
 
-  // กิ่ง-ก้าน-ใบ
   {NOTE_C5, N_QUARTER, DYN_MF}, {NOTE_D5, N_QUARTER, DYN_MF}, {NOTE_E5, N_HALF, DYN_F},
-  // ชะ-ชะ
   {NOTE_G5, N_EIGHTH, DYN_F},  {NOTE_G5, N_QUARTER, DYN_F},
-  // ใบ-ก้าน-กิ่ง
   {NOTE_E5, N_QUARTER, DYN_MF}, {NOTE_D5, N_QUARTER, DYN_MP}, {NOTE_C5, N_HALF, DYN_MF},
 
-  // ฝนตกลมแรงจริงจริง
   {NOTE_G5, N_EIGHTH, DYN_F}, {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_A5, N_EIGHTH, DYN_F}, {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_EIGHTH, DYN_MP}, {NOTE_G5, N_QUARTER, DYN_F},
-  // ฝนตกลมแรงจริงจริง
   {NOTE_G5, N_EIGHTH, DYN_F}, {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_A5, N_EIGHTH, DYN_F}, {NOTE_G5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_EIGHTH, DYN_MP}, {NOTE_C5, N_QUARTER, DYN_MF},
 
-  // ชะ-ชะ
   {NOTE_G5, N_EIGHTH, DYN_F},  {NOTE_G5, N_QUARTER, DYN_F},
-  // กิ่ง-ก้าน-ใบ
   {NOTE_C5, N_QUARTER, DYN_MF}, {NOTE_D5, N_QUARTER, DYN_MF}, {NOTE_C5, N_HALF, DYN_F}
 };
 
-// 🛺 1.5 เพลงรถตุ๊กตุ๊ก
+// 🛺 1.6 เพลงรถตุ๊กตุ๊ก
 const Note SONG_TUKTUK[] PROGMEM = {
   {NOTE_C5, N_EIGHTH, DYN_MF}, {NOTE_D5, N_EIGHTH, DYN_MF}, {NOTE_E5, N_EIGHTH, DYN_MF}, {NOTE_G5, N_QUARTER, DYN_F},
   {NOTE_G5, N_EIGHTH, DYN_F},  {NOTE_E5, N_EIGHTH, DYN_MF}, {NOTE_C5, N_QUARTER, DYN_MF},
@@ -213,7 +236,7 @@ const Note SONG_TUKTUK[] PROGMEM = {
   {NOTE_C5, N_EIGHTH, DYN_MF}, {NOTE_C5, N_HALF,    DYN_F}
 };
 
-// 🌕 1.6 เพลงลอยกระทง
+// 🌕 1.7 เพลงลอยกระทง
 const Note SONG_LOYKRATHONG[] PROGMEM = {
   {NOTE_A4, N_EIGHTH, DYN_MF}, {NOTE_A4, N_EIGHTH, DYN_MP}, {NOTE_C5, N_EIGHTH, DYN_MF}, {NOTE_A4, N_EIGHTH, DYN_MP}, {NOTE_G4, N_EIGHTH, DYN_MP}, {NOTE_E4, N_EIGHTH, DYN_MP}, {NOTE_G4, N_EIGHTH, DYN_MF}, {NOTE_A4, N_QUARTER, DYN_F},
   {NOTE_C5, N_EIGHTH, DYN_MF}, {NOTE_C5, N_EIGHTH, DYN_MP}, {NOTE_D5, N_EIGHTH, DYN_F},  {NOTE_C5, N_EIGHTH, DYN_MF}, {NOTE_A4, N_EIGHTH, DYN_MF}, {NOTE_G4, N_EIGHTH, DYN_MP}, {NOTE_A4, N_QUARTER, DYN_F},
@@ -329,6 +352,7 @@ const Note SFX_ALARM[] PROGMEM = {
 // ตารางทะเบียนเพลง (SONG REGISTRY)
 // ============================================================================
 const SongItem SONG_REGISTRY[] = {
+  {"mixue",       "เพลงมี่เสวี่ย (Mixue)", "recreation", "🍦", 118, 0.82f, SONG_MIXUE,      sizeof(SONG_MIXUE)      / sizeof(Note)},
   {"numalee",     "หนูมาลีมีลูกแมว", "recreation", "🐱", 135, 0.82f, SONG_NUMALEE,    sizeof(SONG_NUMALEE)    / sizeof(Note)},
   {"chang",       "เพลงช้าง",       "recreation", "🐘", 125, 0.82f, SONG_CHANG,      sizeof(SONG_CHANG)      / sizeof(Note)},
   {"kaiyang",     "ไก่ย่างถูกเผา",   "recreation", "🍗", 125, 0.82f, SONG_KAIYANG,    sizeof(SONG_KAIYANG)    / sizeof(Note)},
@@ -353,7 +377,7 @@ const size_t SONG_REGISTRY_COUNT = sizeof(SONG_REGISTRY) / sizeof(SongItem);
 // ============================================================================
 // EXPRESSIVE ACOUSTIC MELODY SYNTHESIZER
 // สถาปัตยกรรมสังเคราะห์เสียงพร้อม Dynamic Velocity & Timbre Envelope Modulation
-// แปลงเสียงบัซเซอร์แบนๆ ให้มีความกังวาน นุ่มนวล มีไดนามิก และไพเราะสมจริง
+// ออกแบบระบบปิดเสียงแบบ Hardware Detach & Pull LOW ป้องกันเสียงแช่ค้าง 100%
 // ============================================================================
 class SongPlayer {
 public:
@@ -365,16 +389,14 @@ public:
     _song(nullptr),
     _noteIdx(0),
     _timer(0),
+    _lastModTime(0),
     _currentSoundMs(0),
     _currentPauseMs(0),
     _currentFreq(0),
     _baseDuty(450),
-    _currentDuty(0),
     _timbre(TIMBRE_MUSIC_BOX) {}
 
   void begin() {
-    pinMode(_pin, OUTPUT);
-    ledcAttach(_pin, 1000, 10); // 10-bit resolution (Duty 0..1023, 511 = 50% max volume)
     _silence();
   }
 
@@ -405,6 +427,7 @@ public:
 
   bool playSong(const SongItem* song) {
     if (!song || song->length == 0) return false;
+    stop(); // Reset and silence any ongoing playback first
     _song = song;
     _noteIdx = 0;
     _state = SOUNDING;
@@ -413,10 +436,11 @@ public:
   }
 
   void stop() {
-    _silence();
     _state = IDLE;
     _song = nullptr;
     _noteIdx = 0;
+    _currentFreq = 0;
+    _silence();
   }
 
   void update() {
@@ -427,7 +451,7 @@ public:
       unsigned long elapsed = now - _timer;
 
       if (elapsed >= _currentSoundMs) {
-        _silence();
+        _silence(); // Silent gap between notes - guaranteed 0V
         if (_currentPauseMs > 0) {
           _state = PAUSING;
           _timer = now;
@@ -435,7 +459,7 @@ public:
           _advanceNote();
         }
       } else {
-        // Real-time Dynamic Envelope & Timbre Modulation (ความไพเราะ & ไดนามิก)
+        // Real-time Dynamic Envelope & Timbre Modulation (Rate-limited to avoid bus flood)
         _modulateEnvelope(elapsed);
       }
     } else if (_state == PAUSING) {
@@ -452,6 +476,7 @@ public:
   void toneBeep(uint16_t freq, uint16_t durationMs) {
     stop();
     if (freq > 0) {
+      ledcAttach(_pin, freq, 10);
       ledcWriteTone(_pin, freq);
       ledcWrite(_pin, 400);
       delay(durationMs);
@@ -465,16 +490,20 @@ private:
   const SongItem* _song;
   size_t _noteIdx;
   unsigned long _timer;
+  unsigned long _lastModTime;
   uint32_t _currentSoundMs;
   uint32_t _currentPauseMs;
   uint16_t _currentFreq;
   uint32_t _baseDuty;
-  uint32_t _currentDuty;
   InstrumentTimbre _timbre;
 
+  // ตัดวงจรสัญญาณเสียงอย่างสมบูรณ์แบบ: ปลดปล่อย Pin จาก LEDC และสั่ง LOW 0V ป้องกันเสียงค้าง 100%
   void _silence() {
     ledcWriteTone(_pin, 0);
     ledcWrite(_pin, 0);
+    ledcDetach(_pin);
+    pinMode(_pin, OUTPUT);
+    digitalWrite(_pin, LOW);
   }
 
   void _startCurrentNote() {
@@ -509,60 +538,68 @@ private:
     }
 
     switch (dyn) {
-      case DYN_P:  _baseDuty = 180; break; // เบา นุ่ม
-      case DYN_MP: _baseDuty = 280; break; // ปานกลางค่อนข้างเบา
-      case DYN_MF: _baseDuty = 390; break; // ชัดเจนกำลังดี
+      case DYN_P:  _baseDuty = 160; break; // เบา นุ่ม
+      case DYN_MP: _baseDuty = 270; break; // ปานกลางค่อนข้างเบา
+      case DYN_MF: _baseDuty = 380; break; // ชัดเจนกำลังดี
       case DYN_F:
       default:     _baseDuty = 490; break; // หนักแน่น พุ่งกังวาน (Max 511)
     }
 
-    // Articulation Gate Ratio (เว้นวรรคช่องไฟขั้นต่ำ 32ms เสมอ)
+    // Articulation Gate Ratio (เว้นวรรคช่องไฟขั้นต่ำ 35ms เสมอ)
     float soundFraction = constrain(_song->gateRatio, 0.60f, 0.88f);
     _currentSoundMs = (uint32_t)(totalNoteMs * soundFraction);
     _currentPauseMs = (uint32_t)(totalNoteMs - _currentSoundMs);
-    if (_currentPauseMs < 32) {
-      _currentPauseMs = 32;
-      if (_currentSoundMs > 32) _currentSoundMs -= 32;
+    if (_currentPauseMs < 35) {
+      _currentPauseMs = 35;
+      if (_currentSoundMs > 35) _currentSoundMs -= 35;
     }
 
     _timer = millis();
+    _lastModTime = _timer;
+
+    // ติดตั้งและเริ่มส่งสัญญาณความถี่โน้ต
+    ledcAttach(_pin, _currentFreq, 10);
     ledcWriteTone(_pin, _currentFreq);
     ledcWrite(_pin, _baseDuty);
   }
 
-  // ปรับแต่งหางเสียง (Envelope) และความมีชีวิตชีวาของคลื่นเสียงตาม Timbre ที่เลือก
+  // ปรับแต่งหางเสียง (Envelope) แบบจำกัดความถี่การอัปเดต (Rate-limited 25ms) ป้องกันการล็อกของ LEDC Timer
   void _modulateEnvelope(unsigned long elapsed) {
     if (_currentFreq == REST || _currentSoundMs == 0) return;
-    float progress = (float)elapsed / (float)_currentSoundMs; // 0.0 -> 1.0
+
+    unsigned long now = millis();
+    if (now - _lastModTime < 25) return; // ทำงานไม่เกิน 40 ครั้ง/วินาที ป้องกัน Timer Hardware Crash
+    _lastModTime = now;
+
+    float progress = (float)elapsed / (float)_currentSoundMs;
+    if (progress > 1.0f) progress = 1.0f;
 
     switch (_timbre) {
       case TIMBRE_MUSIC_BOX: {
         // 🔔 กล่องดนตรี: เสียงเคาะกระดิ่งแก้ว แล้วค่อยๆ กังวานหรี่ลงอย่างนุ่มนวล
-        // Curve: Attack 100% -> ค่อยๆ คลายพลังงานลงเหลือ 25%
-        float decay = 1.0f - (progress * 0.72f);
+        float decay = 1.0f - (progress * 0.70f);
         uint32_t duty = (uint32_t)(_baseDuty * decay);
-        if (duty < 40) duty = 40;
+        if (duty < 50) duty = 50;
         ledcWrite(_pin, duty);
         break;
       }
 
       case TIMBRE_VIBRATO: {
-        // 🎻 เสียงร้องมีลูกคอ: โน้ตที่ลากยาวเกิน 300ms จะมีลูกคอพริ้วหวาน (LFO Vibrato 5.5 Hz)
-        if (_currentSoundMs >= 300 && elapsed >= 160) {
-          float lfoPhase = (float)(elapsed - 160) * 0.035f; // ~5.5 Hz
-          float pitchOffset = sin(lfoPhase) * (_currentFreq * 0.012f); // ±1.2% micro-pitch
-          ledcWriteTone(_pin, (uint32_t)(_currentFreq + pitchOffset));
+        // 🎻 เสียงร้องมีลูกคอ: โน้ตที่ลากยาวเกิน 350ms จะมีลูกคอพริ้วหวาน (LFO 5.5 Hz)
+        if (_currentSoundMs >= 350 && elapsed >= 180) {
+          float lfoPhase = (float)(elapsed - 180) * 0.035f;
+          float pitchOffset = sin(lfoPhase) * (_currentFreq * 0.012f);
+          ledcChangeFrequency(_pin, (uint32_t)(_currentFreq + pitchOffset), 10);
         }
-        // รักษาระดับเสียงนิ่ง อบอุ่น
         ledcWrite(_pin, _baseDuty);
         break;
       }
 
       case TIMBRE_ACOUSTIC: {
-        // 🎹 เปียโน/คาลิมบา: ดีดหัวโน้ตคมชัด (Pluck) แล้วคงเสียง sustain อุ่นๆ
+        // 🎹 เปียโน/คาลิมบา: ดีดหัวโน้ตคมชัด แล้วคงเสียง sustain อุ่นๆ
         uint32_t duty = _baseDuty;
         if (progress > 0.15f) {
-          float decay = 1.0f - ((progress - 0.15f) * 0.55f);
+          float decay = 1.0f - ((progress - 0.15f) * 0.50f);
           duty = (uint32_t)(_baseDuty * decay);
         }
         if (duty < 60) duty = 60;
@@ -572,7 +609,7 @@ private:
 
       case TIMBRE_CHIPTUNE:
       default: {
-        // 👾 เกม 8-บิต: Square wave แท้ ยึดตาม Dynamic Velocity หนัก-เบา
+        // 👾 เกม 8-บิต: ยึดตาม Dynamic Velocity หนัก-เบา
         ledcWrite(_pin, _baseDuty);
         break;
       }

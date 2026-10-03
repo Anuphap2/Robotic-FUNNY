@@ -440,6 +440,10 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
       <span class="section-title">🌟 การแสดงสันทนาการ (Sync Song & Dance)</span>
     </div>
     <div class="showcase-grid" id="showcaseContainer">
+      <button class="showcase-btn" onclick="startShowcase('mixue', 'dance')">
+        <span>🍦 เพลงมี่เสวี่ย Mixue Ice Cream (ไวรัลดังทั่วโลก + แดนซ์)</span>
+        <span class="badge-live">SHOW</span>
+      </button>
       <button class="showcase-btn" onclick="startShowcase('numalee', 'dance')">
         <span>🐱 หนูมาลีมีลูกแมวเหมียว (เพลงน่ารัก + สันทนาการแดนซ์)</span>
         <span class="badge-live">SHOW</span>
