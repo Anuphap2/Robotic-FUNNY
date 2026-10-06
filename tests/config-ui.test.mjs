@@ -106,10 +106,21 @@ test('automatic telemetry renders changing behavior and target lock without a co
     $:id=>controls[id],facts:(id,values)=>rows=values
   });
   for(const behavior of ['roam','follow','greet','avoid','observe','stop']){
-    render({mode:'interactive',behavior,targetClass:'moving_target',decision:'follow_step',targetLocked:behavior==='follow',movingVotes:2});
+    render({mode:'interactive',behavior,targetClass:'moving_target',decision:'follow_cruise',targetLocked:behavior==='follow',movingVotes:2});
     assert.ok(controls.interactiveState.textContent.startsWith('อัตโนมัติ'));
     assert.equal(rows.length,4);assert.ok(!rows.some(row=>row[0].includes('ยืนยัน')));
     if(behavior==='follow')assert.ok(rows[2][1].startsWith('จับอัตโนมัติ'));
   }
   render({mode:'manual'});assert.equal(controls.interactiveState.textContent,'ยังไม่เริ่ม');
+});
+test('telemetry explains continuous drive, periodic observation and both avoidance directions',()=>{
+  let rows;
+  const renderSource=source.slice(source.indexOf('const decisionLabels='),source.indexOf('function updateTelemetry(d)'));
+  const render=runInNewContext(renderSource+'; updateInteractive',{
+    $:()=>({}),facts:(id,values)=>rows=values
+  });
+  for(const [decision,expected] of [['roam_cruise','ต่อเนื่อง'],['follow_cruise','ต่อเนื่อง'],['periodic_scan','พักสังเกต'],['obstacle_brake','หยุด'],['avoid_retry','อีกด้าน'],['scan_turn','ซ้าย'],['scan_right','ขวา']]){
+    render({mode:'interactive',behavior:'roam',targetClass:'static_object',decision});
+    assert.ok(rows[1][1].includes(expected),decision);
+  }
 });

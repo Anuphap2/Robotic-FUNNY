@@ -1,93 +1,94 @@
-# Verification — firmware 2.2.0
+# Verification — firmware 2.3.0
 
 Checked on 7 October 2026 (Asia/Bangkok). No firmware was uploaded and no
 physical robot was driven during these checks.
 
 ## Final ESP32 build
 
-Compiled the final source with `--warnings all`, FQBN `esp32:esp32:esp32`,
-ESP32 core 3.3.12 and the library versions listed in README. Final incremental
-build completed successfully without warnings/errors.
+Final source compiled successfully with `--warnings all`, FQBN
+`esp32:esp32:esp32`, ESP32 core 3.3.12 and the libraries listed in README.
+The final build copy matches all changed production sources (excluding the
+`#line` markers inserted by Arduino).
 
-- Program storage: 1,078,366 / 1,310,720 bytes (82%).
-- Static RAM: 52,736 / 327,680 bytes (16%).
-- Remaining RAM before runtime allocations: 274,944 bytes. This is not a measured
-  running-board heap; Wi-Fi/HTTP/OLED allocate memory at runtime.
-- Static RAM is unchanged from 2.1.0. All new target evidence storage is fixed
-  capacity; no dynamic history or additional song buffers are allocated.
-- `Config.h` is identical to original commit `0192c93`; no GPIO assignments changed.
-- Saved-settings count (51), order, numeric defaults and NVS schema v2 remain
-  compatible with 2.1.0; only two explanatory hints changed.
-- `SongSystem.h` is unchanged from `d64557f`: 443 notes, all 19 registered tracks,
-  four bytes per note, 1,772 bytes of note tables in Flash. The previously verified
-  3,544-byte score reduction is retained.
+- Program storage: 1,080,874 / 1,310,720 bytes (82%).
+- Static RAM: 52,768 / 327,680 bytes (16%); 274,912 bytes remain before runtime
+  allocations. This is not a measurement of the running board's heap.
+- Static RAM increased by 32 bytes from 2.2.0. Cruise/filter/retry storage is fixed
+  capacity, with no additional song buffers or unbounded history.
+- Full initial build reported existing ESP32Servo unused-variable warnings;
+  final incremental build completed without diagnostics from project sources.
+- All 39 production assertions also passed an independent syntax-only compile
+  with the ESP32 C++ compiler.
+- `Config.h` matches original commit `0192c93`; GPIO assignments are unchanged.
+- `SongSystem.h` matches `a20d12c`; 443 notes and all 19 tracks retain the earlier
+  reduction to four bytes per note (1,772 bytes of note tables in Flash).
 
-## Production decision logic checked at compile time
+## Production movement and decision regressions
 
-`DecisionTree.h` contains 23 static assertions executing the production functions:
+The firmware contains 39 static assertions executing its production functions.
+These checks compile away; they do not allocate runtime test buffers or tasks.
 
-- Eight range-classifier checks: missing echo, close boundary, insufficient
-  readings, discontinuity, far echo, approaching/receding candidates and noise.
-- Twelve automatic-policy checks: wait for repeated movement evidence, acquire
-  without a web command, follow a stopped target, hold the distance boundary,
-  release a lost target, greet, explore a newly clear path, scan, limit turning,
-  and give close/unstable/missing readings priority over motion.
-- A movement-vote regression: votes require consistent direction and clear on
-  stationary readings, reversed direction or explicit reset.
-- A six-reading-window regression: reset, fixed capacity and outlier detection.
-- An integrated sequence using the actual window, voting, classifier and policy:
-  observe -> automatically acquire -> follow -> release -> resume exploration.
-  It supplies no human-confirmation or behavior-selection commands.
+`AutonomousDrive.h` verifies:
 
-These assertions passed in the final firmware build. They verify the pure
-production decision logic, not ESP32 timing, NVS behavior or real actuator motion.
+- Leases derived from sonar cadence, the configured minimum and the 600 ms cap.
+- Three seconds of uninterrupted clear-path drive with 29 new-echo renewals;
+  repeated loop ticks do not renew the lease or stop the drive.
+- Timer expiration on schedule when fresh echoes cease, even if the last range
+  value itself still looks clear.
+- Continuous following without exploration's periodic observation stops.
+- Median filtering and a follow stop threshold distinct from the start threshold.
+- One far outlier withholds renewal without losing the target; two distinct far
+  readings release it. Repeated ticks over the same echo are not extra votes.
+- Immediate raw-close, invalid-echo and obstacle braking, bypassing filtering.
+- Explicit cruise cancellation prevents subsequent echo-triggered renewal.
+- Avoidance cooldown, alternate-side retry and a requirement for fresh evidence.
+  A retry direction is kept for three bounded batches instead of undoing the
+  previous turn at every batch boundary and revisiting only the same sector.
+- Cruise, watchdog and retry deadlines across millis() rollover.
+- Old capture ages cannot authorize renewal, including long sonar intervals.
+- Narrow saved clearance configurations still retain an 8 cm start/stop gap.
 
-## Actual dashboard code tested with Node
+`DecisionTree.h` verifies the existing range classifier, stationary movement
+votes, fixed six-reading window, automatic acquisition/follow/loss/recovery,
+priority stops and bounded turn batches. An untracked stationary obstacle is
+avoided instead of receiving a long greeting gesture.
 
-`node --test tests/config-ui.test.mjs`: 12 tests passed. Tests execute dashboard
-functions extracted from WebUI.h using the RuntimeConfig.h schema, covering:
+Its additional integrated 12-second clear-path trace executes the actual
+stationary window, classifier, policy, cruise controller and watchdog predicate.
+At the default 100 ms echo cadence it starts cruising four times and spends at
+least 85% of the trace walking. Moving samples never enter the stationary target
+window. This is an ideal software trace, not a measurement on a physical robot.
 
-- Every field's bounds and invalid types, servo transforms, proximity and
-  autonomous distance relationships, missing/unknown/GPIO keys and blank inputs.
-- v1 JSON migration preserves all 42 old values and supplies only new defaults;
-  v2 validates the full draft, and maximum form size fits the 2,048-byte body cap.
-- Idle page exit does not cancel autonomy; active/in-flight manual driving sends
-  a keepalive stop.
-- One click sends one `mode=interactive` start command, with no behavior selector
-  or target-confirmation control; the stop button sends the explicit stop command.
-- Telemetry renders all six automatic behavior states and range target lock
-  without a confirmation step.
+## Dashboard and compatibility
+
+`node --test tests/config-ui.test.mjs`: 13 tests covering actual dashboard code:
+field bounds/types, servo/proximity/autonomy constraints, invalid/unknown/GPIO
+fields, blank inputs, v1 import preserving 42 old values, bounded v2 imports,
+one-command Interactive start, idle page closure, manual drive exit stop,
+automatic telemetry and the new continuous-drive/observation/avoidance labels.
 
 Dashboard JavaScript syntax and `git diff --check` passed.
+The 51 saved field keys, order, numeric bounds/defaults and NVS schema v2 remain
+compatible with 2.2.0. Labels/hints now explain the new timing semantics:
+`auto_pulse_ms` is a minimum forward lease, `auto_observe_ms` controls periodic
+observation cadence and avoidance retry cooldown, and `auto_turn_limit` bounds
+each scan batch. No saved configuration is erased or rewritten automatically.
 
-## Browser checks with a local UI fixture
-
-`tests/preview.mjs` serves the actual dashboard and schema with timed example
-telemetry. This fixture does not execute the firmware decision tree or motors.
-
-- The dashboard starts with only start/stop controls for Interactive. There is
-  no behavior selector or target-confirmation button.
-- After one start click, observed automatic avoidance and exploration statuses
-  with no additional behavior commands. Timed sample telemetry supplies these
-  changes; this proves UI rendering, not physical autonomy.
-- Stop Interactive returns the simulated system to Manual with motor stop.
-- Closing the idle dashboard and opening it again preserves the simulated
-  Interactive mode; no extra start command is needed.
-- At 320, 375 and the current desktop viewport (920 pixels), the document scroll
-  width does not exceed its client width.
-- No browser warnings/errors were reported.
+`tests/preview.mjs` remains a UI-only fixture with timed example telemetry. It
+does not execute production decision logic or motors. Browser checks from 2.2.0
+are historical; the movement checks above are independent of that fixture.
 
 ## Hardware verification still required
 
-Test on the actual circuit: independent pulse cutoff during an HTTP stall,
-sonar freshness/timeout and sensor placement, braking distance, turn clearance,
-automatic acquisition of moving targets, close/stale/outlier stops, following
-and loss/reacquisition, greeting without repeated motion, return to exploration,
-manual override, emergency stop, operation after browser closure and sustained
-heap use. Existing v1/v2 NVS migration/persistence still needs reboot checks.
+Test with the actual circuit on flat ground: continuous drive and actual braking
+distance, front-echo quality while moving, pulse/lease cutoff during HTTP stalls,
+old ISR captures after a stall, sonar timeout/no echo, follow deadband and single
+far spikes, repeated far readings and reacquisition, periodic stationary scans,
+alternate-side avoidance, close-stop priority, manual override, emergency stop,
+greetings and sustained heap use. Existing NVS migration/persistence requires
+reboot checks. Defaults retain a 100 ms sonar interval; use 60–200 ms for smooth
+cruising. Very long saved intervals can still cause watchdog stops between echoes.
 
-Range-only automatic following cannot prove that a target is human, distinguish
-an unmoving person from a wall/object, retain visual identity, see lateral or
-rear targets, or detect floor edges. It follows a consistent front echo by
-heuristic, automatically, without a human-confirmation gate. Loss of usable
-measurements stops motion; exploration resumes only after fresh usable evidence.
+Range-only following cannot prove human identity or see side/rear/floor edges.
+Continuous motion remains subject to usable new echoes and the independent
+watchdog; it does not authorize blind movement when sensor data is missing.

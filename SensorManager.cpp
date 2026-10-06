@@ -9,9 +9,11 @@ void IRAM_ATTR SensorManager::echoEdge(void* arg) {
     portENTER_CRITICAL_ISR(&self->_echoMux);
     if (self->_armed) {
       if (now - self->_triggerUs > self->_echoTimeoutUs) {
+        self->_completedMs = millis();
         self->_pulseUs = 0; self->_complete = true; self->_armed = false;
       } else if (high) { self->_riseUs = now; self->_rose = true; }
       else if (self->_rose) {
+        self->_completedMs = millis();
         self->_pulseUs = now - self->_riseUs;
         self->_complete = true; self->_armed = false;
       }

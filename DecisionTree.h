@@ -1,6 +1,7 @@
 #ifndef DECISION_TREE_H
 #define DECISION_TREE_H
 #include <stdint.h>
+#include "AutonomousDrive.h"
 
 // Range-only evidence. No leaf asserts that an echo is a human or a wall.
 enum class TargetClass { NO_DATA, TOO_CLOSE, COLLECTING, UNSTABLE, CLEAR, MOVING, STATIC_OBJECT };
@@ -46,7 +47,7 @@ private:
   uint8_t _votes = 0;
   int8_t _direction = 0;
 };
-enum class AutoAction { STOP, WAIT, RELEASE, ACQUIRE, FOLLOW, HOLD, GREET, ROAM, TURN, BLOCKED };
+enum class AutoAction { STOP, WAIT, RELEASE, ACQUIRE, FOLLOW, HOLD, ROAM, TURN, BLOCKED };
 struct AutoObservation {
   TargetClass target;
   bool locked;
@@ -61,7 +62,6 @@ constexpr AutoAction decideAutomatic(AutoObservation o, int followCm, int clearC
     : o.locked && o.target == TargetClass::CLEAR ? AutoAction::RELEASE
     : !o.locked && o.target == TargetClass::MOVING ? (o.movingVotes >= 2 ? AutoAction::ACQUIRE : AutoAction::WAIT)
     : o.locked ? (o.distanceCm > followCm + 5 ? AutoAction::FOLLOW : AutoAction::HOLD)
-    : o.greetingDue ? AutoAction::GREET
     : o.distanceCm >= clearCm ? AutoAction::ROAM
     : o.turns >= o.turnLimit ? AutoAction::BLOCKED : AutoAction::TURN;
 }
@@ -70,7 +70,7 @@ static_assert(decideAutomatic({TargetClass::MOVING,false,2,100,false,0,4},65,60)
 static_assert(decideAutomatic({TargetClass::STATIC_OBJECT,true,0,100,false,0,4},65,60) == AutoAction::FOLLOW, "Maintain acquired front target without human input");
 static_assert(decideAutomatic({TargetClass::STATIC_OBJECT,true,0,70,false,0,4},65,60) == AutoAction::HOLD, "Hold follow deadband boundary");
 static_assert(decideAutomatic({TargetClass::CLEAR,true,0,181,false,0,4},65,60) == AutoAction::RELEASE, "Lose target before exploring again");
-static_assert(decideAutomatic({TargetClass::STATIC_OBJECT,false,0,40,true,0,4},65,60) == AutoAction::GREET, "Greet nearby echo once before obstacle avoidance");
+static_assert(decideAutomatic({TargetClass::STATIC_OBJECT,false,0,40,true,0,4},65,60) == AutoAction::TURN, "Do not pause to greet an untracked obstacle");
 static_assert(decideAutomatic({TargetClass::STATIC_OBJECT,false,0,60,false,4,4},65,60) == AutoAction::ROAM, "Clear path resumes exploration automatically");
 static_assert(decideAutomatic({TargetClass::STATIC_OBJECT,false,0,50,false,0,4},65,60) == AutoAction::TURN, "Scan when front path is obstructed");
 static_assert(decideAutomatic({TargetClass::STATIC_OBJECT,false,0,50,false,4,4},65,60) == AutoAction::BLOCKED, "Bound blind turning");
@@ -169,4 +169,31 @@ constexpr bool automaticSequenceRegression() {
   return decideAutomatic({target,locked,0,220,false,0,4},65,60) == AutoAction::ROAM;
 }
 static_assert(automaticSequenceRegression(), "Observe, acquire, follow, lose target and resume exploration autonomously");
+constexpr bool clearPathCruiseRegression() {
+  CruiseController drive; RangeWindow window; MovingEvidence moving;
+  const CruiseLimits limits{25,60,65,180,cruiseScanMs(600)};
+  uint32_t observeAfter=0, issued=0; int drivingFrames=0, starts=0;
+  // 12 seconds of real classifier/controller decisions at 100 ms sonar cadence.
+  // Motion samples do not enter the stationary target-classification window.
+  for (uint32_t now=0;now<12000;now+=100) {
+    if (drive.active()) {
+      auto action=drive.update(now,true,true,220,limits);
+      if (action==CruiseAction::RENEW) { issued=now; ++drivingFrames; }
+      else if (action==CruiseAction::OBSERVE) {
+        window.clear(); moving.clear(); observeAfter=now+sonarSettleMs(100);
+      } else return false;
+    } else if (static_cast<int32_t>(now-observeAfter)>=0) {
+      window.add(220); auto e=window.evidence(true,220);
+      auto target=decideTarget(e,25,180,8); moving.add(target,e.deltaCm);
+      auto action=decideAutomatic({target,false,moving.votes(),220,false,0,4},65,60);
+      if (action==AutoAction::ROAM) {
+        drive.start(CruiseMode::ROAM,now,220); issued=now; ++starts; ++drivingFrames;
+        window.clear(); moving.clear();
+      } else if (action!=AutoAction::WAIT) return false;
+    }
+    if (drive.active() && motorLeaseExpired(now,issued,autonomousLeaseMs(100,22000,120))) return false;
+  }
+  return starts==4 && drivingFrames>=102; // >=85% walking in this ideal echo trace.
+}
+static_assert(clearPathCruiseRegression(), "Stable clear path spends at least 85 percent of time cruising, not collecting");
 #endif

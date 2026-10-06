@@ -70,15 +70,16 @@ private:
   portMUX_TYPE _echoMux = portMUX_INITIALIZER_UNLOCKED;
   volatile bool _armed = false, _rose = false, _complete = false;
   volatile uint32_t _riseUs = 0, _pulseUs = 0;
+  volatile uint32_t _completedMs = 0;
   volatile uint32_t _triggerUs = 0, _echoTimeoutUs = 22000;
   static void echoEdge(void* arg);
   void updateSonar(uint32_t now) {
     if (!robotSettings.get(SONAR_ENABLED)) return;
-    uint32_t pulse = 0;
+    uint32_t pulse = 0, completedMs = 0;
     bool done, waiting;
     portENTER_CRITICAL(&_echoMux);
     done = _complete; waiting = _armed;
-    if (done) { pulse = _pulseUs; _complete = false; }
+    if (done) { pulse = _pulseUs; completedMs = _completedMs; _complete = false; }
     if (waiting && micros() - _triggerUs >= (uint32_t)robotSettings.get(SONAR_TIMEOUT)) {
       _armed = false; waiting = false; _distance = -1;
     }
@@ -86,7 +87,10 @@ private:
     if (done) {
       float cm = pulse * 0.01715f + robotSettings.get(DISTANCE_OFFSET) / 10.0f;
       _distance = pulse >= 100 && pulse <= (uint32_t)robotSettings.get(SONAR_TIMEOUT) && cm > 0 ? cm : -1;
-      _lastDistance = now; ++_distanceSequence;
+      // An echo received before an HTTP stall is NOT a new measurement now.
+      _lastDistance = completedMs;
+      if (millis() - completedMs >= static_cast<uint32_t>(robotSettings.get(SONAR_INTERVAL)) * 3) _distance = -1;
+      ++_distanceSequence;
     }
     if (!waiting && now - _lastSonar >= (uint32_t)robotSettings.get(SONAR_INTERVAL)) {
       _lastSonar = now;

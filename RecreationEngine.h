@@ -42,7 +42,8 @@ public:
     _motion.freeze();
     _song.stop();
     _targetLocked = false; _moving.clear(); _greetedNearby = false;
-    _window.clear(); _pulseActive = false; _turns = 0;
+    _window.clear(); _cruise.stop(); _pulseActive = false; _turns = 0;
+    _retry.reset(); _heldFarReadings = 0;
     _target = TargetClass::NO_DATA; _reason = "inactive";
     _sequence = _sensor.distanceSequence(); _observeAfter = millis();
     _behavior = "observe";
@@ -92,7 +93,7 @@ public:
   // Start synchronized song & dance show
   bool startShowcase(const char* songId, const char* motionId) {
     _motor.stop();
-    _targetLocked = false; _moving.clear(); _pulseActive = false; _window.clear(); _reason = "inactive";
+    _targetLocked = false; _moving.clear(); _cruise.stop(); _pulseActive = false; _window.clear(); _reason = "inactive";
     _song.stop(); _motion.freeze();
     bool sOk = _song.playById(songId);
     bool mOk = _motion.playById(motionId, true); // Loop dance while song plays
@@ -152,11 +153,14 @@ private:
   bool _partyRested = false;
   RangeWindow _window;
   MovingEvidence _moving;
+  CruiseController _cruise;
+  ScanRetry _retry;
   TargetClass _target = TargetClass::NO_DATA;
   const char* _reason = "inactive";
   const char* _behavior = "observe";
   bool _targetLocked = false, _pulseActive = false, _greetedNearby = false;
   uint8_t _turns = 0;
+  uint8_t _heldFarReadings = 0;
   uint32_t _sequence = 0, _observeAfter = 0, _pulseEnd = 0;
 
   void _updatePartyMode() {
@@ -198,20 +202,39 @@ private:
   }
 
   void _invalidate(const char* reason, TargetClass target) {
-    _motor.stop(); _pulseActive = false; _targetLocked = false; _moving.clear();
+    _beginObservation(millis()); _targetLocked = false; _heldFarReadings = 0;
     _behavior = "stop";
     _window.clear(); _target = target; _reason = reason;
-    _sequence = _sensor.distanceSequence();
-    _observeAfter = millis() + _observeDuration();
   }
-  uint32_t _observeDuration() const {
-    return max(static_cast<uint32_t>(robotSettings.get(AUTO_OBSERVE)),
-               static_cast<uint32_t>(robotSettings.get(SONAR_INTERVAL)) * 3);
+  uint32_t _settleDuration() const {
+    return sonarSettleMs(robotSettings.get(SONAR_INTERVAL));
+  }
+  void _beginObservation(uint32_t now) {
+    _motor.stop(); _cruise.stop(); _pulseActive = false;
+    _window.clear(); _moving.clear();
+    _sequence = _sensor.distanceSequence(); _observeAfter = now + _settleDuration();
+  }
+  uint32_t _driveLease() const {
+    return autonomousLeaseMs(robotSettings.get(SONAR_INTERVAL),
+      robotSettings.get(SONAR_TIMEOUT), robotSettings.get(AUTO_PULSE));
+  }
+  CruiseLimits _cruiseLimits() const {
+    return {static_cast<int16_t>(robotSettings.get(AUTO_STOP)),
+      roamStartCm(robotSettings.get(AUTO_STOP), robotSettings.get(AUTO_CLEAR)),
+      static_cast<int16_t>(robotSettings.get(FOLLOW_DISTANCE)),
+      static_cast<int16_t>(robotSettings.get(FOLLOW_MAX)),
+      cruiseScanMs(robotSettings.get(AUTO_OBSERVE))};
+  }
+  void _startCruise(CruiseMode mode, uint32_t now, int16_t cm) {
+    if (!_motor.cruise(_driveLease())) { _invalidate("hardware_disabled", TargetClass::NO_DATA); return; }
+    _cruise.start(mode, now, cm); _window.clear(); _moving.clear(); _heldFarReadings = 0;
+    _behavior = mode == CruiseMode::FOLLOW ? "follow" : "roam";
+    _reason = mode == CruiseMode::FOLLOW ? "follow_cruise" : "roam_cruise";
   }
   void _startPulse(MotorController::Direction direction, uint32_t duration, const char* reason) {
     if (!_motor.pulse(direction, duration)) { _invalidate("hardware_disabled", TargetClass::NO_DATA); return; }
     _pulseActive = true; _pulseEnd = millis() + duration;
-    _observeAfter = _pulseEnd + _observeDuration();
+    _observeAfter = _pulseEnd + _settleDuration();
     _window.clear(); _moving.clear(); _reason = reason;
   }
   void _updateInteractiveMode() {
@@ -219,22 +242,57 @@ private:
     if (!robotSettings.get(MOTOR_ENABLED) || !robotSettings.get(SONAR_ENABLED) || !_motor.ready()) {
       _invalidate("hardware_disabled", TargetClass::NO_DATA); return;
     }
-    if (!_sensor.distanceValid()) { _invalidate("no_echo_stop", TargetClass::NO_DATA); return; }
+    if (!_sensor.distanceValid() || !autonomousRangeFresh(_sensor.distanceAge(),
+        robotSettings.get(SONAR_INTERVAL), _driveLease())) {
+      _invalidate("no_echo_stop", TargetClass::NO_DATA); return;
+    }
     int16_t cm = static_cast<int16_t>(_sensor.distance());
     if (cm > robotSettings.get(PROX_GREETING) + 10) _greetedNearby = false;
     if (cm <= robotSettings.get(AUTO_STOP)) {
       _invalidate("too_close_stop", TargetClass::TOO_CLOSE);
       _updateGreeting(true); return;
     }
-    if (_targetLocked && cm > robotSettings.get(FOLLOW_MAX)) {
-      _invalidate("target_lost", TargetClass::CLEAR); return;
+    if (_cruise.active()) {
+      bool fresh = _sequence != _sensor.distanceSequence();
+      if (fresh) _sequence = _sensor.distanceSequence();
+      auto action = _cruise.update(now, true, fresh, cm, _cruiseLimits());
+      switch (action) {
+        case CruiseAction::KEEP:
+          if (fresh && _targetLocked && cm > robotSettings.get(FOLLOW_MAX)) _reason = "checking_target";
+          return; // Same echo never renews the motor lease.
+        case CruiseAction::RENEW:
+          if (!_motor.cruise(_driveLease())) _invalidate("hardware_disabled", TargetClass::NO_DATA);
+          else _reason = _targetLocked ? "follow_cruise" : "roam_cruise";
+          return;
+        case CruiseAction::LOST: _invalidate("target_lost", TargetClass::CLEAR); return;
+        case CruiseAction::FAULT: _invalidate("no_echo_stop", TargetClass::NO_DATA); return;
+        case CruiseAction::OBSERVE:
+          _beginObservation(now); _behavior = "observe"; _reason = "periodic_scan"; return;
+        case CruiseAction::BRAKE:
+          _beginObservation(now); _behavior = "avoid"; _reason = "obstacle_brake"; return;
+        case CruiseAction::HOLD:
+          _beginObservation(now); _behavior = "follow"; _reason = "follow_hold"; return;
+      }
     }
+    if (_targetLocked && cm > robotSettings.get(FOLLOW_MAX)) {
+      _motor.stop(); _behavior = "follow"; _reason = "checking_target";
+      if (_sequence != _sensor.distanceSequence()) {
+        _sequence = _sensor.distanceSequence(); ++_heldFarReadings;
+        _window.clear(); _moving.clear();
+      }
+      if (_heldFarReadings >= 2) _invalidate("target_lost", TargetClass::CLEAR);
+      return;
+    }
+    _heldFarReadings = 0;
     if (_pulseActive) {
       if (static_cast<int32_t>(now - _pulseEnd) < 0) return;
       _motor.stop(); _pulseActive = false; _window.clear();
     }
     if (static_cast<int32_t>(now - _observeAfter) < 0) { _reason = "settling"; _behavior = "observe"; return; }
-    if (_motion.isMoving()) { _reason = "greeting"; _behavior = "greet"; return; }
+    if (_motion.isMoving()) {
+      _sequence = _sensor.distanceSequence(); _observeAfter = now + _settleDuration();
+      _reason = "greeting"; _behavior = "greet"; return;
+    }
     bool fresh = false;
     if (_sequence != _sensor.distanceSequence()) {
       _sequence = _sensor.distanceSequence();
@@ -248,7 +306,7 @@ private:
       now - _lastProximityReaction >= static_cast<uint32_t>(robotSettings.get(PROX_COOLDOWN));
     auto action = decideAutomatic({_target, _targetLocked, _moving.votes(), cm, greetingDue,
       _turns, static_cast<uint8_t>(robotSettings.get(AUTO_TURN_LIMIT))},
-      robotSettings.get(FOLLOW_DISTANCE), robotSettings.get(AUTO_CLEAR));
+      robotSettings.get(FOLLOW_DISTANCE), roamStartCm(robotSettings.get(AUTO_STOP), robotSettings.get(AUTO_CLEAR)));
     switch (action) {
       case AutoAction::STOP:
         _invalidate("ambiguous_stop", _target); return;
@@ -259,27 +317,31 @@ private:
         _invalidate("target_lost", _target); return;
       case AutoAction::ACQUIRE:
         // This is an automatic range target lock, never a claim of human identity.
-        _targetLocked = true; _turns = 0; _behavior = "follow"; _reason = "target_acquired";
+        _targetLocked = true; _turns = 0; _retry.clearWait();
+        _behavior = "follow"; _reason = "target_acquired";
         _face.setTemporaryFace("happy", 800); return;
       case AutoAction::FOLLOW:
-        _behavior = "follow";
-        _startPulse(MotorController::FORWARD, robotSettings.get(AUTO_PULSE), "follow_step"); return;
+        _startCruise(CruiseMode::FOLLOW, now, cm); return;
       case AutoAction::HOLD:
         _behavior = "follow"; _reason = "follow_hold";
         if (greetingDue) _updateGreeting(false); return;
-      case AutoAction::GREET:
-        _behavior = "greet"; _reason = "greeting";
-        _updateGreeting(false);
-        _window.clear(); _moving.clear(); _sequence = _sensor.distanceSequence();
-        _observeAfter = now + _observeDuration(); return;
       case AutoAction::ROAM:
-        _behavior = "roam"; _turns = 0;
-        _startPulse(MotorController::FORWARD, robotSettings.get(AUTO_PULSE), "roam_step"); return;
+        _turns = 0; _retry.clearWait();
+        _startCruise(CruiseMode::ROAM, now, cm); return;
       case AutoAction::TURN:
         _behavior = "avoid"; ++_turns;
-        _startPulse(MotorController::LEFT, robotSettings.get(AUTO_TURN), "scan_turn"); return;
+        _startPulse(_retry.right() ? MotorController::RIGHT : MotorController::LEFT,
+          robotSettings.get(AUTO_TURN), _retry.right() ? "scan_right" : "scan_turn"); return;
       case AutoAction::BLOCKED:
-        _behavior = "stop"; _reason = "turn_limit_stop"; return;
+        // Bound each scan batch, then try the other direction after a rest.
+        // Still requires fresh stationary evidence and clearance above AUTO_STOP.
+        _behavior = "avoid"; _reason = "avoid_retry";
+        if (_retry.ready(now, fresh, robotSettings.get(AUTO_OBSERVE))) {
+          _turns = 1;
+          _startPulse(_retry.right() ? MotorController::RIGHT : MotorController::LEFT,
+            robotSettings.get(AUTO_TURN), _retry.right() ? "scan_right" : "scan_turn");
+        }
+        return;
     }
   }
 

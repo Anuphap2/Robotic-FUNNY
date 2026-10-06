@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include "Config.h"
 #include "RuntimeConfig.h"
+#include "AutonomousDrive.h"
 #include <esp_timer.h>
 #include <driver/gpio.h>
 
@@ -48,6 +49,11 @@ public:
     if (direction != FORWARD && direction != LEFT && direction != RIGHT) return false;
     return request(direction, constrain(durationMs, 60UL, 300UL));
   }
+  // Continuous forward drive: extending the SAME direction does not drop GPIOs
+  // or repeat direction-switch dead time. Call only for a distinct usable echo.
+  bool cruise(uint32_t leaseMs) {
+    return request(FORWARD, constrain(leaseMs, 150UL, 600UL));
+  }
   bool handleCommand(const String& cmd) {
     if (cmd == "stop") { stop(); return true; }
     if (cmd == "forward") return request(FORWARD);
@@ -63,7 +69,7 @@ public:
     portENTER_CRITICAL(&_mux);
     if (!_enabled ||
         ((_dir != STOPPED || _pending != STOPPED) &&
-         millis() - _lastCommandTime >= _lease)) {
+         motorLeaseExpired(millis(), _lastCommandTime, _lease))) {
       stopLocked(); portEXIT_CRITICAL(&_mux); return;
     }
     if (_pending != STOPPED && millis() - _switchTime >= 5) {
