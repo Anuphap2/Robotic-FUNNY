@@ -2,6 +2,7 @@
 #define SONG_SYSTEM_H
 
 #include <Arduino.h>
+#include "RuntimeConfig.h"
 #include "esp32-hal-ledc.h"
 #include "Config.h"
 
@@ -452,17 +453,18 @@ public:
   }
 
   bool playSong(const SongItem* song) {
-    if (!song || song->length == 0) return false;
+    if (!robotSettings.get(AUDIO_ENABLED) || !robotSettings.get(AUDIO_VOLUME) || !song || song->length == 0) return false;
     stop(); // Reset and silence any ongoing playback first
     _song = song;
     _noteIdx = 0;
     _state = SOUNDING;
     _startCurrentNote();
-    return true;
+    return _state != IDLE;
   }
 
   void stop() {
     _state = IDLE;
+    _standaloneBeep = false;
     _song = nullptr;
     _noteIdx = 0;
     _currentFreq = 0;
@@ -470,7 +472,13 @@ public:
   }
 
   void update() {
-    if (_state == IDLE || !_song) return;
+    if (_state == IDLE) return;
+    if (!robotSettings.get(AUDIO_ENABLED) || !robotSettings.get(AUDIO_VOLUME)) { stop(); return; }
+    if (_standaloneBeep) {
+      if (millis() - _timer >= _currentSoundMs) stop();
+      return;
+    }
+    if (!_song) return;
 
     unsigned long now = millis();
     if (_state == SOUNDING) {
@@ -501,14 +509,16 @@ public:
 
   void toneBeep(uint16_t freq, uint16_t durationMs) {
     stop();
-    if (freq > 0) {
-      ledcAttach(_pin, freq, 10);
-      ledcWriteTone(_pin, freq);
-      ledcWrite(_pin, 400);
-      delay(durationMs);
-      _silence();
+    if (freq > 0 && robotSettings.get(AUDIO_ENABLED) && robotSettings.get(AUDIO_VOLUME)) {
+      if (!_attachTone(freq)) return;
+      _currentFreq = freq; _baseDuty = scaledDuty(400);
+      ledcWrite(_pin, _baseDuty);
+      _currentSoundMs = durationMs; _currentPauseMs = 0;
+      _timer = millis(); _lastModTime = _timer;
+      _standaloneBeep = true; _state = SOUNDING;
     }
   }
+  bool hardwareOK() const { return _hardwareOK; }
 
 private:
   uint8_t _pin;
@@ -522,12 +532,23 @@ private:
   uint16_t _currentFreq;
   uint32_t _baseDuty;
   InstrumentTimbre _timbre;
+  bool _attached = false, _standaloneBeep = false, _hardwareOK = true;
+  uint32_t scaledDuty(uint32_t duty) const { return duty * robotSettings.get(AUDIO_VOLUME) / 100; }
+  bool _attachTone(uint16_t frequency) {
+    // Classic ESP32: channel 6 / timer 3 cannot change the servo timer 0.
+    _attached = ledcAttachChannel(_pin, frequency, 10, 6);
+    _hardwareOK = _attached;
+    if (!_attached) { stop(); return false; }
+    return true;
+  }
 
   // ตัดวงจรสัญญาณเสียงอย่างสมบูรณ์แบบ: ปลดปล่อย Pin จาก LEDC และสั่ง LOW 0V ป้องกันเสียงค้าง 100%
   void _silence() {
-    ledcWriteTone(_pin, 0);
-    ledcWrite(_pin, 0);
-    ledcDetach(_pin);
+    if (_attached) {
+      ledcWrite(_pin, 0);
+      ledcDetach(_pin);
+      _attached = false;
+    }
     pinMode(_pin, OUTPUT);
     digitalWrite(_pin, LOW);
   }
@@ -543,7 +564,7 @@ private:
     _currentFreq = note.freq;
 
     // คำนวณความยาวเวลาจาก BPM (1 Beat = 60000 / BPM ms)
-    float oneBeatMs = 60000.0f / (float)_song->bpm;
+    float oneBeatMs = 60000.0f / ((float)_song->bpm * robotSettings.get(AUDIO_TEMPO) / 100.0f);
     float totalNoteMs = note.beats * oneBeatMs;
 
     if (note.freq == REST) {
@@ -571,6 +592,7 @@ private:
       default:     _baseDuty = 490; break; // หนักแน่น พุ่งกังวาน (Max 511)
     }
 
+    _baseDuty = scaledDuty(_baseDuty);
     // Articulation Gate Ratio (เว้นวรรคช่องไฟขั้นต่ำ 35ms เสมอ)
     float soundFraction = constrain(_song->gateRatio, 0.60f, 0.88f);
     _currentSoundMs = (uint32_t)(totalNoteMs * soundFraction);
@@ -584,8 +606,7 @@ private:
     _lastModTime = _timer;
 
     // ติดตั้งและเริ่มส่งสัญญาณความถี่โน้ต
-    ledcAttach(_pin, _currentFreq, 10);
-    ledcWriteTone(_pin, _currentFreq);
+    if (!_attachTone(_currentFreq)) return;
     ledcWrite(_pin, _baseDuty);
   }
 
@@ -605,7 +626,7 @@ private:
         // 🔔 กล่องดนตรี: เสียงเคาะกระดิ่งแก้ว แล้วค่อยๆ กังวานหรี่ลงอย่างนุ่มนวล
         float decay = 1.0f - (progress * 0.70f);
         uint32_t duty = (uint32_t)(_baseDuty * decay);
-        if (duty < 50) duty = 50;
+        if (duty < scaledDuty(50)) duty = scaledDuty(50);
         ledcWrite(_pin, duty);
         break;
       }
@@ -628,7 +649,7 @@ private:
           float decay = 1.0f - ((progress - 0.15f) * 0.50f);
           duty = (uint32_t)(_baseDuty * decay);
         }
-        if (duty < 60) duty = 60;
+        if (duty < scaledDuty(60)) duty = scaledDuty(60);
         ledcWrite(_pin, duty);
         break;
       }

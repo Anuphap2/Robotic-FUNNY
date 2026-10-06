@@ -1,107 +1,100 @@
 #ifndef SENSOR_MANAGER_H
 #define SENSOR_MANAGER_H
-
 #include <Arduino.h>
 #include "Config.h"
+#include "RuntimeConfig.h"
 
-// ============================================================================
-// SENSOR MANAGER (Non-blocking Sampling, Noise Filtering, Beat Detection)
-// ============================================================================
 class SensorManager {
 public:
-  SensorManager() :
-    _micBaseline(2000),
-    _currentVolume(0),
-    _peakVolume(0),
-    _currentDistance(-1.0f),
-    _lastSensorRead(0),
-    _lastBeatTime(0),
-    _beatDetected(false),
-    _clapThreshold(140) {}
-
   void begin() {
-    pinMode(PIN_TRIG, OUTPUT);
-    pinMode(PIN_ECHO, INPUT);
-    pinMode(PIN_MIC_AO, INPUT);
-
-    digitalWrite(PIN_TRIG, LOW);
-
-    // Baseline calibration for microphone KY-037
-    long sum = 0;
-    for (int i = 0; i < 60; i++) {
-      sum += analogRead(PIN_MIC_AO);
-      delay(4);
-    }
-    _micBaseline = sum / 60;
+    pinMode(PIN_TRIG, OUTPUT); pinMode(PIN_ECHO, INPUT); pinMode(PIN_MIC_AO, INPUT);
+    digitalWrite(PIN_TRIG, LOW); analogReadResolution(12);
+    attachInterruptArg(digitalPinToInterrupt(PIN_ECHO), echoEdge, this, CHANGE);
+    startCalibration();
   }
-
+  void startCalibration() {
+    _calibrating = robotSettings.get(MIC_ENABLED);
+    _calibrationCount = 0; _calibrationSum = 0;
+    _volume = 0; _peak = 0; _beat = false;
+  }
+  void applyConfig() {
+    portENTER_CRITICAL(&_echoMux);
+    _armed = false; _complete = false; _rose = false;
+    _echoTimeoutUs = robotSettings.get(SONAR_TIMEOUT);
+    portEXIT_CRITICAL(&_echoMux);
+    _distance = -1; _beat = false; _volume = 0; _peak = 0;
+    if (!robotSettings.get(MIC_ENABLED)) _calibrating = false;
+  }
   void update() {
-    unsigned long now = millis();
-    if (now - _lastSensorRead < 60) return; // 60ms sampling period (~16 Hz refresh)
-    _lastSensorRead = now;
-
-    // 1. Read Microphone (KY-037 Analog)
-    int rawAudio = analogRead(PIN_MIC_AO);
-    int instantVol = abs(rawAudio - _micBaseline);
-    // Smooth EMA filter
-    _currentVolume = (_currentVolume * 3 + instantVol * 5) / 8;
-
-    if (instantVol > _peakVolume) {
-      _peakVolume = instantVol;
-    } else {
-      _peakVolume = max(0, _peakVolume - 4); // Peak decay
+    uint32_t now = millis();
+    if (robotSettings.get(MIC_ENABLED)) {
+      if (_calibrating && now - _lastMic >= 4) {
+        _lastMic = now; _calibrationSum += analogRead(PIN_MIC_AO);
+        if (++_calibrationCount >= 60) {
+          _baseline = _calibrationSum / _calibrationCount; _calibrating = false;
+        }
+      } else if (!_calibrating && now - _lastMic >= (uint32_t)robotSettings.get(MIC_INTERVAL)) {
+        _lastMic = now;
+        int instant = abs(analogRead(PIN_MIC_AO) - _baseline);
+        int weight = robotSettings.get(MIC_SMOOTH);
+        _volume = (_volume * (100 - weight) + instant * weight) / 100;
+        _peak = max(instant, max(0, _peak - 4));
+        if (_volume > robotSettings.get(CLAP_THRESHOLD) && now - _lastBeat >= (uint32_t)robotSettings.get(BEAT_COOLDOWN)) {
+          _lastBeat = now; _beat = true;
+        }
+      }
     }
-
-    // Beat / Clap Event Detection (for Recreational sound-reactive party)
-    if (_currentVolume > _clapThreshold && (now - _lastBeatTime >= 280)) {
-      _lastBeatTime = now;
-      _beatDetected = true;
-    }
-
-    // 2. Read Ultrasonic Distance (HC-SR04/05)
-    _currentDistance = _measureDistance();
+    updateSonar(now);
   }
-
-  int volume() const { return _currentVolume; }
-  int peakVolume() const { return _peakVolume; }
-  float distance() const { return _currentDistance; }
-
+  int volume() const { return _volume; }
+  int peakVolume() const { return _peak; }
+  int baseline() const { return _baseline; }
+  bool calibrating() const { return _calibrating; }
+  float distance() const { return _distance; }
+  uint32_t distanceAge() const { return _distance < 0 ? 0 : millis() - _lastDistance; }
+  bool distanceValid() const { return _distance > 0 && distanceAge() < (uint32_t)robotSettings.get(SONAR_INTERVAL) * 3; }
   bool consumeBeat() {
-    if (_beatDetected) {
-      _beatDetected = false;
-      return true;
-    }
-    return false;
+    bool found = _beat && millis() - _lastBeat < 500;
+    _beat = false; return found;
   }
-
-  bool isObstacleNear(float thresholdCm = 20.0f) const {
-    return (_currentDistance > 0.0f && _currentDistance < thresholdCm);
-  }
-
-  void setClapThreshold(int threshold) { _clapThreshold = threshold; }
-  int clapThreshold() const { return _clapThreshold; }
-
+  bool isObstacleNear(float thresholdCm = 20) const { return distanceValid() && _distance < thresholdCm; }
 private:
-  int _micBaseline;
-  int _currentVolume;
-  int _peakVolume;
-  float _currentDistance;
-  unsigned long _lastSensorRead;
-  unsigned long _lastBeatTime;
-  bool _beatDetected;
-  int _clapThreshold;
-
-  float _measureDistance() {
-    digitalWrite(PIN_TRIG, LOW);
-    delayMicroseconds(2);
-    digitalWrite(PIN_TRIG, HIGH);
-    delayMicroseconds(10);
-    digitalWrite(PIN_TRIG, LOW);
-
-    long duration = pulseIn(PIN_ECHO, HIGH, 22000); // 22ms timeout ~ 3.7 meters
-    if (duration <= 0) return -1.0f;
-    return (duration * 0.0343f) / 2.0f;
+  int _baseline = 2000, _volume = 0, _peak = 0;
+  float _distance = -1;
+  bool _beat = false, _calibrating = false;
+  uint32_t _lastMic = 0, _lastBeat = 0, _lastSonar = 0, _lastDistance = 0;
+  uint32_t _calibrationSum = 0;
+  uint16_t _calibrationCount = 0;
+  portMUX_TYPE _echoMux = portMUX_INITIALIZER_UNLOCKED;
+  volatile bool _armed = false, _rose = false, _complete = false;
+  volatile uint32_t _riseUs = 0, _pulseUs = 0;
+  volatile uint32_t _triggerUs = 0, _echoTimeoutUs = 22000;
+  static void echoEdge(void* arg);
+  void updateSonar(uint32_t now) {
+    if (!robotSettings.get(SONAR_ENABLED)) return;
+    uint32_t pulse = 0;
+    bool done, waiting;
+    portENTER_CRITICAL(&_echoMux);
+    done = _complete; waiting = _armed;
+    if (done) { pulse = _pulseUs; _complete = false; }
+    if (waiting && micros() - _triggerUs >= (uint32_t)robotSettings.get(SONAR_TIMEOUT)) {
+      _armed = false; waiting = false; _distance = -1;
+    }
+    portEXIT_CRITICAL(&_echoMux);
+    if (done) {
+      float cm = pulse * 0.01715f + robotSettings.get(DISTANCE_OFFSET) / 10.0f;
+      _distance = pulse >= 100 && pulse <= (uint32_t)robotSettings.get(SONAR_TIMEOUT) && cm > 0 ? cm : -1;
+      _lastDistance = now;
+    }
+    if (!waiting && now - _lastSonar >= (uint32_t)robotSettings.get(SONAR_INTERVAL)) {
+      _lastSonar = now;
+      portENTER_CRITICAL(&_echoMux);
+      _triggerUs = micros();
+      _echoTimeoutUs = robotSettings.get(SONAR_TIMEOUT);
+      _rose = false; _complete = false; _armed = true;
+      portEXIT_CRITICAL(&_echoMux);
+      digitalWrite(PIN_TRIG, HIGH); delayMicroseconds(10); digitalWrite(PIN_TRIG, LOW);
+    }
   }
 };
-
-#endif // SENSOR_MANAGER_H
+#endif

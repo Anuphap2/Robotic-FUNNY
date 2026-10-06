@@ -2,6 +2,7 @@
 #define FACE_SYSTEM_H
 
 #include <Arduino.h>
+#include "RuntimeConfig.h"
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
@@ -284,9 +285,12 @@ public:
 
   bool begin() {
     Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
+    Wire.setTimeOut(20); // Bound I2C waits if a peripheral is missing or disconnected.
     if (!_display.begin(OLED_I2C_ADDR, true)) {
       return false;
     }
+    _ready = true;
+    applyConfig();
     _display.clearDisplay();
     _display.setTextColor(SH110X_WHITE);
     _display.setTextSize(1);
@@ -298,6 +302,7 @@ public:
   }
 
   void showBootMessage(const char* line1, const char* line2) {
+    if (!_ready || !robotSettings.get(OLED_ENABLED)) return;
     _display.clearDisplay();
     _display.setTextColor(SH110X_WHITE);
     _display.setTextSize(1);
@@ -339,21 +344,22 @@ public:
   }
 
   void update() {
+    if (!_ready || !robotSettings.get(OLED_ENABLED)) return;
     unsigned long now = millis();
 
     // Check temp face expiration
-    if (_tempIdx >= 0 && now >= _tempUntil) {
+    if (_tempIdx >= 0 && (int32_t)(now - _tempUntil) >= 0) {
       _tempIdx = -1;
       renderImmediate();
     }
 
     // Auto natural blinking when idle on 'normal' face
     if (_tempIdx < 0 && strcmp(FACE_REGISTRY[_currentIdx].id, "normal") == 0) {
-      if (!_blinking && now >= _nextBlink) {
+      if (!_blinking && (int32_t)(now - _nextBlink) >= 0) {
         _blinking = true;
         _blinkEnd = now + 150; // 150ms natural eyelid closure
         renderImmediate();
-      } else if (_blinking && now >= _blinkEnd) {
+      } else if (_blinking && (int32_t)(now - _blinkEnd) >= 0) {
         _blinking = false;
         _scheduleNextBlink();
         renderImmediate();
@@ -361,9 +367,9 @@ public:
     }
 
     // Micro-animation phase update (every 300ms for bouncing elements/hearts/Zzz)
-    if (now - _lastAnim >= 300) {
+    if (now - _lastAnim >= (uint32_t)robotSettings.get(OLED_ANIM)) {
       _lastAnim = now;
-      _animPhase++;
+      _animPhase = (_animPhase + 1) % 1000;
       // Only re-render if current face has animated elements
       const char* id = currentFace().id;
       if (strcmp(id, "love") == 0 || strcmp(id, "music") == 0 || strcmp(id, "sleepy") == 0) {
@@ -373,6 +379,7 @@ public:
   }
 
   void renderImmediate() {
+    if (!_ready || !robotSettings.get(OLED_ENABLED)) return;
     _display.clearDisplay();
     _display.setTextColor(SH110X_WHITE);
 
@@ -385,8 +392,17 @@ public:
     _display.display();
   }
 
+  bool ready() const { return _ready; }
+  void applyConfig() {
+    if (!_ready) return;
+    _display.oled_command(robotSettings.get(OLED_ENABLED) ? SH110X_DISPLAYON : SH110X_DISPLAYOFF);
+    _display.setContrast(robotSettings.get(OLED_CONTRAST));
+    renderImmediate();
+  }
+
 private:
   Adafruit_SH1106G _display;
+  bool _ready = false;
   int _currentIdx;
   int _tempIdx;
   unsigned long _tempUntil;

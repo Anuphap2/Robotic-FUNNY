@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <ESP32Servo.h>
 #include "Config.h"
+#include "RuntimeConfig.h"
 
 // ============================================================================
 // SERVO KEYFRAME DATA STRUCTURES
@@ -159,27 +160,30 @@ public:
 
   void begin() {
     ESP32PWM::allocateTimer(0);
-    ESP32PWM::allocateTimer(1);
-    ESP32PWM::allocateTimer(2);
-    ESP32PWM::allocateTimer(3);
+    // Three servos share timer 0; buzzer uses channel 6 / timer 3.
+    applyConfig();
+  }
 
-    _servoHead.setPeriodHertz(50);
-    _servoArmL.setPeriodHertz(50);
-    _servoArmR.setPeriodHertz(50);
-
-    _servoHead.attach(PIN_SERVO_HEAD, SERVO_MIN_US, SERVO_MAX_US);
-    _servoArmL.attach(PIN_SERVO_ARM_L, SERVO_MIN_US, SERVO_MAX_US);
-    _servoArmR.attach(PIN_SERVO_ARM_R, SERVO_MIN_US, SERVO_MAX_US);
-
+  void applyConfig() {
+    freeze();
+    int low = robotSettings.get(SERVO_MIN_US_CFG), high = robotSettings.get(SERVO_MAX_US_CFG);
+    if (!robotSettings.get(SERVO_ENABLED) || low != _pulseLow || high != _pulseHigh) {
+      _servoHead.detach(); _servoArmL.detach(); _servoArmR.detach();
+    }
+    _pulseLow = low; _pulseHigh = high;
+    if (!robotSettings.get(SERVO_ENABLED)) return;
+    attachServo(_servoHead, PIN_SERVO_HEAD);
+    attachServo(_servoArmL, PIN_SERVO_ARM_L);
+    attachServo(_servoArmR, PIN_SERVO_ARM_R);
     toCenter();
   }
 
+  void freeze() { _isMoving = false; _activeRoutine = nullptr; }
+  bool ready() { return _servoHead.attached() && _servoArmL.attached() && _servoArmR.attached(); }
+
   void toCenter() {
-    _servoHead.write(90);
-    _servoArmL.write(30);
-    _servoArmR.write(150);
-    _isMoving = false;
-    _activeRoutine = nullptr;
+    freeze();
+    writeAngles(robotSettings.get(HEAD_CENTER), robotSettings.get(LEFT_CENTER), robotSettings.get(RIGHT_CENTER));
   }
 
   bool playById(const char* id, bool loop = false) {
@@ -192,7 +196,7 @@ public:
   }
 
   bool playRoutine(const MotionRoutine* routine, bool loop = false) {
-    if (!routine || routine->length == 0) return false;
+    if (!robotSettings.get(SERVO_ENABLED) || !ready() || !routine || routine->length == 0) return false;
     _activeRoutine = routine;
     _loop = loop;
     _frameIdx = 0;
@@ -212,7 +216,7 @@ public:
     unsigned long now = millis();
     const ServoKeyframe& current = _activeRoutine->frames[_frameIdx];
 
-    if (now - _timer >= current.holdMs) {
+    if (now - _timer >= (uint32_t)current.holdMs * 100 / robotSettings.get(MOTION_SPEED)) {
       _frameIdx++;
       if (_frameIdx < _activeRoutine->length) {
         _applyFrame(_activeRoutine->frames[_frameIdx]);
@@ -237,9 +241,7 @@ public:
   void setManualAngles(int head, int armL, int armR) {
     _isMoving = false;
     _activeRoutine = nullptr;
-    _servoHead.write(constrain(head, 0, 180));
-    _servoArmL.write(constrain(armL, 0, 180));
-    _servoArmR.write(constrain(armR, 0, 180));
+    writeAngles(head, armL, armR);
   }
 
 private:
@@ -253,11 +255,19 @@ private:
   bool _isMoving;
   bool _loop;
 
-  void _applyFrame(const ServoKeyframe& frame) {
-    _servoHead.write(constrain(frame.head, 0, 180));
-    _servoArmL.write(constrain(frame.armL, 0, 180));
-    _servoArmR.write(constrain(frame.armR, 0, 180));
+  int _pulseLow = 0, _pulseHigh = 0;
+  void attachServo(Servo& servo, int pin) {
+    if (servo.attached()) return;
+    servo.setPeriodHertz(50);
+    servo.attach(pin, _pulseLow, _pulseHigh);
   }
+  void writeAngles(int head, int left, int right) {
+    if (!robotSettings.get(SERVO_ENABLED)) return;
+    if (_servoHead.attached()) _servoHead.write(robotSettings.servoAngle(HEAD_MIN, head));
+    if (_servoArmL.attached()) _servoArmL.write(robotSettings.servoAngle(LEFT_MIN, left));
+    if (_servoArmR.attached()) _servoArmR.write(robotSettings.servoAngle(RIGHT_MIN, right));
+  }
+  void _applyFrame(const ServoKeyframe& frame) { writeAngles(frame.head, frame.armL, frame.armR); }
 };
 
 #endif // MOTION_SYSTEM_H

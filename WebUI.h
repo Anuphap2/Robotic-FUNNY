@@ -1,695 +1,98 @@
 #ifndef WEBUI_H
 #define WEBUI_H
-
 #include <Arduino.h>
 
 const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html lang="th">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-  <title>Smart Recreational Robot | หุ่นยนต์สันทนาการอัจฉริยะ</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg: #070b13;
-      --card-bg: #0f172a;
-      --card-border: #1e293b;
-      --card-hover: #1e293b;
-      --primary: #38bdf8;
-      --primary-glow: rgba(56, 189, 248, 0.25);
-      --accent: #a855f7;
-      --accent-glow: rgba(168, 85, 247, 0.25);
-      --success: #10b981;
-      --warning: #f59e0b;
-      --danger: #ef4444;
-      --text: #f8fafc;
-      --text-muted: #94a3b8;
-    }
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
-    body {
-      font-family: 'Plus Jakarta Sans', 'Prompt', -apple-system, sans-serif;
-      background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, var(--bg) 70%);
-      color: var(--text);
-      min-height: 100vh;
-      display: flex;
-      justify-content: center;
-      padding: 16px 12px 60px;
-    }
-    .app {
-      width: 100%;
-      max-width: 520px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    /* HEADER */
-    .header {
-      background: rgba(15, 23, 42, 0.75);
-      backdrop-filter: blur(12px);
-      border: 1px solid var(--card-border);
-      border-radius: 24px;
-      padding: 16px 20px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-    }
-    .brand { display: flex; align-items: center; gap: 12px; }
-    .brand-icon {
-      font-size: 28px;
-      background: linear-gradient(135deg, #38bdf8, #818cf8);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      filter: drop-shadow(0 2px 8px var(--primary-glow));
-    }
-    .brand-text h1 { font-size: 17px; font-weight: 800; letter-spacing: -0.3px; color: #fff; }
-    .brand-text p { font-size: 11px; color: var(--text-muted); font-weight: 500; }
-    .status-badge {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      background: rgba(16, 185, 129, 0.12);
-      border: 1px solid rgba(16, 185, 129, 0.3);
-      padding: 6px 12px;
-      border-radius: 999px;
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--success);
-    }
-    .status-dot {
-      width: 8px; height: 8px; border-radius: 50%;
-      background: var(--success);
-      box-shadow: 0 0 10px var(--success);
-      animation: pulse 2s infinite;
-    }
-    @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.85); } }
-
-    /* TELEMETRY HUD */
-    .hud-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .hud-card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 20px;
-      padding: 14px 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      position: relative;
-      overflow: hidden;
-    }
-    .hud-card::after {
-      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
-      background: linear-gradient(90deg, transparent, var(--primary), transparent);
-      opacity: 0.6;
-    }
-    .hud-header { display: flex; align-items: center; justify-content: space-between; }
-    .hud-title { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.6px; }
-    .hud-icon { font-size: 15px; }
-    .hud-value-row { display: flex; align-items: baseline; gap: 4px; }
-    .hud-val { font-size: 24px; font-weight: 800; color: var(--text); }
-    .hud-unit { font-size: 11px; color: var(--text-muted); font-weight: 600; }
-    .gauge-bg {
-      background: rgba(30, 41, 59, 0.7);
-      height: 8px;
-      border-radius: 999px;
-      overflow: hidden;
-      margin-top: 4px;
-    }
-    .gauge-fill {
-      height: 100%;
-      width: 0%;
-      border-radius: 999px;
-      transition: width 0.12s linear, background-color 0.2s;
-    }
-
-    /* SECTION CARD */
-    .section {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 22px;
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-    .section-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .section-title {
-      font-size: 13px;
-      font-weight: 700;
-      color: #e2e8f0;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    /* MODE SELECTOR */
-    .mode-pills { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-    .mode-pill {
-      background: #1e293b;
-      border: 1px solid #334155;
-      padding: 10px 8px;
-      border-radius: 14px;
-      cursor: pointer;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-      transition: all 0.2s;
-      color: var(--text-muted);
-      font-size: 11px;
-      font-weight: 600;
-      text-align: center;
-    }
-    .mode-pill span { font-size: 18px; }
-    .mode-pill.active {
-      background: linear-gradient(135deg, rgba(56,189,248,0.2), rgba(129,140,248,0.25));
-      border-color: var(--primary);
-      color: #fff;
-      box-shadow: 0 0 16px var(--primary-glow);
-    }
-
-    /* D-PAD JOYSTICK */
-    .dpad-wrapper {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 8px;
-      padding: 4px 0 8px;
-    }
-    .dpad-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 68px);
-      grid-template-rows: repeat(3, 60px);
-      gap: 8px;
-      user-select: none;
-    }
-    .dpad-btn {
-      background: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 18px;
-      color: var(--text);
-      font-size: 20px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: all 0.1s cubic-bezier(0.4, 0, 0.2, 1);
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    }
-    .dpad-btn:active, .dpad-btn.pressed {
-      transform: scale(0.92);
-      background: var(--primary);
-      color: #070b13;
-      border-color: var(--primary);
-      box-shadow: 0 0 20px var(--primary-glow);
-    }
-    .dpad-stop {
-      background: rgba(239, 68, 68, 0.15);
-      border-color: rgba(239, 68, 68, 0.4);
-      color: #f87171;
-    }
-    .dpad-stop:active, .dpad-stop.pressed {
-      background: var(--danger);
-      color: #fff;
-      border-color: var(--danger);
-      box-shadow: 0 0 20px rgba(239, 68, 68, 0.5);
-    }
-
-    /* SHOWCASE CARDS */
-    .showcase-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
-    .showcase-btn {
-      background: linear-gradient(135deg, rgba(168,85,247,0.18), rgba(56,189,248,0.18));
-      border: 1px solid rgba(168,85,247,0.35);
-      border-radius: 14px;
-      padding: 12px 16px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      color: #fff;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.15s;
-    }
-    .showcase-btn:active { transform: scale(0.97); filter: brightness(1.2); }
-    .badge-live {
-      background: #a855f7;
-      color: white;
-      font-size: 10px;
-      padding: 3px 8px;
-      border-radius: 999px;
-      font-weight: 700;
-      letter-spacing: 0.4px;
-    }
-
-    /* DYNAMIC GRID BUTTONS */
-    .catalog-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 8px;
-    }
-    .catalog-grid-3 {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
-    }
-    .act-btn {
-      background: #1e293b;
-      border: 1px solid #334155;
-      color: #e2e8f0;
-      padding: 10px 12px;
-      border-radius: 14px;
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      transition: all 0.12s;
-      text-align: left;
-    }
-    .act-btn:hover { background: #25334a; border-color: #475569; }
-    .act-btn:active { transform: scale(0.95); }
-    .act-btn-icon { font-size: 18px; flex-shrink: 0; }
-    .act-btn-label { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-    /* CATEGORY PILLS */
-    .filter-tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
-    .filter-tab {
-      background: #1e293b;
-      border: 1px solid #334155;
-      color: var(--text-muted);
-      padding: 4px 12px;
-      border-radius: 999px;
-      font-size: 11px;
-      font-weight: 600;
-      cursor: pointer;
-      white-space: nowrap;
-      transition: all 0.15s;
-    }
-    .filter-tab.active {
-      background: var(--primary);
-      border-color: var(--primary);
-      color: #070b13;
-    }
-
-    /* EMERGENCY STOP FOOTER */
-    .emergency-btn {
-      background: rgba(239, 68, 68, 0.15);
-      border: 1px solid var(--danger);
-      color: #fca5a5;
-      font-weight: 700;
-      font-size: 13px;
-      padding: 12px;
-      border-radius: 16px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      transition: all 0.15s;
-      width: 100%;
-    }
-    .emergency-btn:active {
-      background: var(--danger);
-      color: #fff;
-    }
-
-    /* TOAST FEEDBACK */
-    #toast {
-      position: fixed;
-      bottom: 24px;
-      left: 50%;
-      transform: translateX(-50%) translateY(100px);
-      background: #1e293b;
-      border: 1px solid var(--primary);
-      color: #fff;
-      padding: 8px 18px;
-      border-radius: 999px;
-      font-size: 12px;
-      font-weight: 600;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-      transition: transform 0.25s cubic-bezier(0.18, 0.89, 0.32, 1.28);
-      pointer-events: none;
-      z-index: 999;
-    }
-    #toast.show { transform: translateX(-50%) translateY(0); }
-  </style>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Recreation Bot · ศูนย์ควบคุม</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1220;--panel:#141f31;--border:#293a50;--text:#edf4ff;--muted:#a6b8cd;--brand:#5ee2be;--danger:#ff7979;--blue:#86bfff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif}button,input,select,textarea{font:inherit}button{cursor:pointer;min-height:44px;border:1px solid var(--border);border-radius:12px;padding:9px 14px;background:#213149;color:var(--text)}button:hover{border-color:var(--brand)}button:disabled{opacity:.45;cursor:not-allowed}button.primary{background:var(--brand);color:#09251e;font-weight:700}button.danger{border-color:var(--danger);color:#ffd3d3;background:#42252c}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid var(--blue);outline-offset:3px}input,select,textarea{width:100%;min-width:0;background:#0c1625;color:var(--text);border:1px solid #46617c;border-radius:9px;padding:10px}input[type=checkbox]{width:24px;height:24px;min-height:24px;accent-color:var(--brand)}input[type=range]{padding:0;accent-color:var(--brand)}h1,h2,h3,p{margin:0}h1{font-size:21px;letter-spacing:-.5px}h2{font-size:18px}h3{font-size:16px}small,.muted{color:var(--muted)}.shell{max-width:1240px;margin:auto;padding:24px 20px 110px}.top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:20px}.brand{display:flex;gap:12px;align-items:center}.logo{width:48px;height:48px;border-radius:15px;background:#183d38;display:grid;place-items:center;font-size:26px}.status{white-space:nowrap;border:1px solid var(--border);border-radius:999px;padding:6px 12px;font-size:13px;color:var(--muted)}.status.online{color:var(--brand)}.status.offline{color:var(--danger)}.nav{display:flex;gap:8px;position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0 16px}.nav button{flex:1}.nav button[aria-selected=true]{background:#204b43;border-color:var(--brand);color:var(--brand)}.panel[hidden]{display:none}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.card{min-width:0;border:1px solid var(--border);background:var(--panel);border-radius:18px;padding:20px}.wide{grid-column:1/-1}.card-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px}.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.metric{padding:15px;border:1px solid var(--border);border-radius:13px;min-width:0}.value{font-size:28px;font-weight:700;line-height:1.3;overflow-wrap:anywhere}.unit{font-size:13px;font-weight:400;color:var(--muted)}.metric small{display:block}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.row>*{min-width:0}.row select{flex:1;min-width:160px}.catalog{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.catalog button{text-align:left;overflow-wrap:anywhere;font-size:14px}.catalog .icon{margin-right:8px}.filter{margin-bottom:12px}.pills button[aria-pressed=true]{border-color:var(--brand);color:var(--brand);background:#204b43}.dpad{display:grid;grid-template-columns:repeat(3,64px);gap:8px;justify-content:center;margin:14px 0}.dpad button{height:64px;font-size:24px;touch-action:none;user-select:none}.dpad button.pressed{background:#204b43;border-color:var(--brand)}.note{font-size:13px;color:var(--muted);margin:10px 0}.notice{padding:12px 14px;background:#1d3546;border:1px solid #43607a;border-radius:12px;margin-bottom:16px;font-size:14px}.config-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px}.config-toolbar input{flex:1;min-width:180px}.config-summary{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}.config-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}fieldset{border:0;margin:0;padding:0;min-width:0}details.group{border:1px solid var(--border);background:var(--panel);border-radius:15px;padding:16px;min-width:0}summary{cursor:pointer;font-weight:700;min-height:34px}.fields{display:grid;gap:15px;margin-top:12px}.field{border-top:1px solid var(--border);padding-top:13px}.field label{display:flex;align-items:center;justify-content:space-between;gap:14px;font-weight:600;margin-bottom:5px}.field small{display:block;font-size:12px;margin-top:4px}.field.changed label{color:var(--brand)}.field.changed{border-left:3px solid var(--brand);padding-left:10px}.field input[type=number]{max-width:180px}.field input:invalid{border-color:var(--danger)}.save-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:18px}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--border)}th{color:var(--muted)}.facts{display:grid;grid-template-columns:1fr 1fr;gap:10px}.fact{border-bottom:1px solid var(--border);padding-bottom:10px;overflow-wrap:anywhere}.fact small{display:block}.servo-test{display:grid;gap:10px;margin-top:12px}.servo-test label{display:grid;grid-template-columns:100px 1fr 42px;gap:10px;align-items:center}.footer{position:fixed;bottom:0;left:0;right:0;z-index:10;background:rgba(11,18,32,.96);border-top:1px solid var(--border);padding:12px 20px;display:flex;justify-content:center}.footer button{width:min(100%,1200px);font-weight:700}.toast{position:fixed;bottom:88px;left:50%;transform:translateX(-50%);max-width:min(90vw,600px);background:#22374b;border:1px solid var(--brand);padding:12px 18px;border-radius:12px;z-index:20;overflow-wrap:anywhere}.toast[hidden]{display:none}.error{border-color:var(--danger)}textarea{min-height:140px}#configMessage{overflow-wrap:anywhere}a{color:var(--brand)}
+@media(min-width:1050px){.config-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.catalog.faces{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:700px){.shell{padding:16px 12px 110px}.grid,.config-grid{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.card{padding:16px}.top{align-items:flex-start}.brand small{font-size:12px}.logo{display:none}h1{font-size:18px}.nav button{padding:9px 7px;font-size:13px}.facts{grid-template-columns:1fr 1fr}.config-toolbar input{flex-basis:100%}.config-toolbar button{flex:1;min-width:130px}.row select{width:100%}}
+@media(max-width:360px){.catalog{grid-template-columns:1fr}.facts{grid-template-columns:1fr}.status{font-size:11px;padding:5px 8px}.metric{padding:10px}.value{font-size:24px}}
+@media(prefers-reduced-motion:no-preference){button{transition:background .12s,border-color .12s}}
+</style>
 </head>
 <body>
-
-<div class="app">
-  <!-- HEADER -->
-  <header class="header">
-    <div class="brand">
-      <span class="brand-icon">🤖</span>
-      <div class="brand-text">
-        <h1>RECREATION BOT</h1>
-        <p>หุ่นยนต์สันทนาการ & เพื่อนร่วมกิจกรรม</p>
-      </div>
-    </div>
-    <div class="status-badge" id="onlineBadge">
-      <div class="status-dot"></div>
-      <span>ONLINE</span>
-    </div>
-  </header>
-
-  <!-- TELEMETRY HUD -->
-  <section class="hud-grid">
-    <!-- Sound HUD -->
-    <div class="hud-card">
-      <div class="hud-header">
-        <span class="hud-title">เสียงไมค์ (KY-037)</span>
-        <span class="hud-icon">🎙️</span>
-      </div>
-      <div class="hud-value-row">
-        <span class="hud-val" id="valSound">0</span>
-        <span class="hud-unit">amp</span>
-      </div>
-      <div class="gauge-bg">
-        <div id="barSound" class="gauge-fill" style="background:var(--success);"></div>
-      </div>
-    </div>
-
-    <!-- Distance HUD -->
-    <div class="hud-card">
-      <div class="hud-header">
-        <span class="hud-title">ระยะทาง (HC-SR05)</span>
-        <span class="hud-icon">📡</span>
-      </div>
-      <div class="hud-value-row">
-        <span class="hud-val" id="valDist">--</span>
-        <span class="hud-unit">cm</span>
-      </div>
-      <div class="gauge-bg">
-        <div id="barDist" class="gauge-fill" style="background:var(--primary);"></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- RECREATION MODE SELECTOR -->
-  <section class="section">
-    <div class="section-header">
-      <span class="section-title">🎭 โหมดการทำงานสันทนาการ (Mode)</span>
-    </div>
-    <div class="mode-pills" id="modeContainer">
-      <div class="mode-pill active" onclick="setMode('manual')">
-        <span>🕹️</span>Manual
-      </div>
-      <div class="mode-pill" onclick="setMode('party')">
-        <span>🎉</span>Party Beat
-      </div>
-      <div class="mode-pill" onclick="setMode('interactive')">
-        <span>👋</span>Interactive
-      </div>
-    </div>
-  </section>
-
-  <!-- MOVEMENT JOYSTICK -->
-  <section class="section">
-    <div class="section-header">
-      <span class="section-title">🕹️ ควบคุมการเคลื่อนที่ (D-Pad Controller)</span>
-    </div>
-    <div class="dpad-wrapper">
-      <div class="dpad-grid">
-        <div></div>
-        <button class="dpad-btn" id="btnFwd" data-dir="forward">▲</button>
-        <div></div>
-        <button class="dpad-btn" id="btnLeft" data-dir="left">◀</button>
-        <button class="dpad-btn dpad-stop" id="btnStop" data-dir="stop">■</button>
-        <button class="dpad-btn" id="btnRight" data-dir="right">▶</button>
-        <div></div>
-        <button class="dpad-btn" id="btnBwd" data-dir="backward">▼</button>
-        <div></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- SYNC SHOWCASE (เพลง+เต้นสันทนาการ) -->
-  <section class="section">
-    <div class="section-header">
-      <span class="section-title">🌟 การแสดงสันทนาการ (Sync Song & Dance)</span>
-    </div>
-    <div class="showcase-grid" id="showcaseContainer">
-      <button class="showcase-btn" onclick="startShowcase('six_seven', 'six_seven')">
-        <span>⚖️ ท่าไวรัล SIX-SEVEN (มีม 6-7 + ท่าชั่งน้ำหนักมือ)</span>
-        <span class="badge-live">SHOW</span>
-      </button>
-      <button class="showcase-btn" onclick="startShowcase('mixue', 'dance')">
-        <span>🍦 เพลงมี่เสวี่ย Mixue Ice Cream (ไวรัลดังทั่วโลก + แดนซ์)</span>
-        <span class="badge-live">SHOW</span>
-      </button>
-      <button class="showcase-btn" onclick="startShowcase('numalee', 'dance')">
-        <span>🐱 หนูมาลีมีลูกแมวเหมียว (เพลงน่ารัก + สันทนาการแดนซ์)</span>
-        <span class="badge-live">SHOW</span>
-      </button>
-      <button class="showcase-btn" onclick="startShowcase('chang', 'dance')">
-        <span>🐘 เพลงช้าง (เพลงขวัญใจสันทนาการ + แดนซ์)</span>
-        <span class="badge-live">SHOW</span>
-      </button>
-      <button class="showcase-btn" onclick="startShowcase('kaiyang', 'chicken')">
-        <span>🍗 ไก่ย่างถูกเผา (เพลงสันทนาการ + ท่ากระพือปีก)</span>
-        <span class="badge-live">SHOW</span>
-      </button>
-      <button class="showcase-btn" onclick="startShowcase('kingkanbai', 'dance')">
-        <span>🍃 กิ่งก้านใบ (เพลงฮิต + แดนซ์สลับแขน)</span>
-        <span class="badge-live">SHOW</span>
-      </button>
-      <button class="showcase-btn" onclick="startShowcase('coffin', 'disco')">
-        <span>🕺 Coffin Dance Show (เพลงไวรัล + ดิสโก้)</span>
-        <span class="badge-live">SHOW</span>
-      </button>
-    </div>
-  </section>
-
-  <!-- DYNAMIC JUKEBOX (SONGS) -->
-  <section class="section">
-    <div class="section-header">
-      <span class="section-title">🎵 ตู้เพลงสันทนาการ (Jukebox)</span>
-      <button class="filter-tab" style="background:#ef4444; border-color:#ef4444; color:#fff;" onclick="sendCmd('song', 'stop')">⏹ หยุดเพลง</button>
-    </div>
-    <div class="filter-tabs" id="songTabs">
-      <button class="filter-tab active" onclick="filterSongs('all')">ทั้งหมด</button>
-      <button class="filter-tab" onclick="filterSongs('recreation')">🎉 สันทนาการ</button>
-      <button class="filter-tab" onclick="filterSongs('pop')">✨ ยอดฮิต</button>
-      <button class="filter-tab" onclick="filterSongs('game')">🎮 เกม</button>
-      <button class="filter-tab" onclick="filterSongs('sfx')">🔊 เอฟเฟกต์</button>
-    </div>
-
-    <!-- Timbre / Instrument Sound Selector -->
-    <div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; margin-top:4px; letter-spacing:0.5px;">
-      🎼 โหมดเสียงเครื่องดนตรี (Sound Timbre & Envelope)
-    </div>
-    <div class="filter-tabs" id="timbreTabs">
-      <button class="filter-tab active" data-timbre="music_box" onclick="setTimbre('music_box')">🔔 กล่องดนตรี (ใสกังวาน)</button>
-      <button class="filter-tab" data-timbre="vibrato" onclick="setTimbre('vibrato')">🎻 ร้องลูกคอ (พริ้วหวาน)</button>
-      <button class="filter-tab" data-timbre="acoustic" onclick="setTimbre('acoustic')">🎹 เปียโน/คาลิมบา</button>
-      <button class="filter-tab" data-timbre="chiptune" onclick="setTimbre('chiptune')">👾 8-Bit เกมบอย</button>
-    </div>
-    <div class="catalog-grid" id="songsContainer">
-      <!-- Dynamically populated from /api/catalog -->
-      <div style="grid-column:span 2; font-size:12px; color:var(--text-muted); text-align:center; padding:12px;">กำลังโหลดรายการเพลง...</div>
-    </div>
-  </section>
-
-  <!-- DYNAMIC OLED FACES -->
-  <section class="section">
-    <div class="section-header">
-      <span class="section-title">😊 สีหน้าอารมณ์ OLED (Face Expressions)</span>
-    </div>
-    <div class="catalog-grid-3" id="facesContainer">
-      <!-- Dynamically populated from /api/catalog -->
-      <div style="grid-column:span 3; font-size:12px; color:var(--text-muted); text-align:center; padding:12px;">กำลังโหลดรายการหน้าตา...</div>
-    </div>
-  </section>
-
-  <!-- DYNAMIC SERVO MOTIONS -->
-  <section class="section">
-    <div class="section-header">
-      <span class="section-title">💃 ท่าทางและการเคลื่อนไหว (Servo Motions)</span>
-    </div>
-    <div class="catalog-grid" id="motionsContainer">
-      <!-- Dynamically populated from /api/catalog -->
-      <div style="grid-column:span 2; font-size:12px; color:var(--text-muted); text-align:center; padding:12px;">กำลังโหลดรายการท่าทาง...</div>
-    </div>
-  </section>
-
-  <!-- EMERGENCY STOP -->
-  <button class="emergency-btn" onclick="sendCmd('system', 'stop_all')">
-    <span>🛑</span> EMERGENCY STOP (หยุดทุกอย่างทันที)
-  </button>
-</div>
-
-<div id="toast">คำสั่งถูกส่งแล้ว!</div>
-
+<main class="shell">
+<header class="top"><div class="brand"><div class="logo" aria-hidden="true">🤖</div><div><h1>RECREATION BOT</h1><small>ศูนย์ควบคุมและตั้งค่าอุปกรณ์</small></div></div><span class="status" id="connection" role="status">กำลังเชื่อมต่อ…</span></header>
+<nav class="nav" role="tablist" aria-label="หน้าหลัก"><button id="tab-dashboard" role="tab" aria-selected="true" aria-controls="dashboard" data-tab="dashboard">ควบคุมหุ่นยนต์</button><button id="tab-hardware" role="tab" aria-selected="false" aria-controls="hardware" data-tab="hardware" tabindex="-1">ตั้งค่า Hardware</button><button id="tab-health" role="tab" aria-selected="false" aria-controls="health" data-tab="health" tabindex="-1">สถานะระบบ</button></nav>
+<section id="dashboard" class="panel grid" role="tabpanel" aria-labelledby="tab-dashboard">
+<div class="card wide"><div class="card-head"><h2>ข้อมูลสด</h2><small id="liveMode">กำลังอ่านสถานะ</small></div><div class="metrics"><div class="metric"><small>เสียงไมค์</small><div class="value"><span id="sound">—</span> <span class="unit">ADC</span></div><small id="micStatus">รอข้อมูล</small></div><div class="metric"><small>ระยะทาง</small><div class="value"><span id="distance">—</span> <span class="unit">cm</span></div><small id="distanceStatus">รอข้อมูล</small></div><div class="metric"><small>หน่วยความจำว่าง</small><div class="value"><span id="heap">—</span> <span class="unit">KB</span></div><small>RAM ที่ใช้งานได้</small></div><div class="metric"><small>ทำงานมาแล้ว</small><div class="value" id="uptime">—</div><small id="firmware">Firmware —</small></div></div></div>
+<div class="card"><div class="card-head"><h2>โหมดและการขับเคลื่อน</h2></div><div class="row pills" id="modes"><button class="command" data-mode="manual">Manual</button><button class="command" data-mode="party">Party Beat</button><button class="command" data-mode="interactive">Interactive</button></div><div class="dpad" aria-label="กดค้างเพื่อขับเคลื่อน"><span></span><button class="command" data-dir="forward" aria-label="เดินหน้า">▲</button><span></span><button class="command" data-dir="left" aria-label="เลี้ยวซ้าย">◀</button><button class="danger command" data-dir="stop" aria-label="หยุดมอเตอร์">■</button><button class="command" data-dir="right" aria-label="เลี้ยวขวา">▶</button><span></span><button class="command" data-dir="backward" aria-label="ถอยหลัง">▼</button><span></span></div><p class="note">กดค้างเพื่อเคลื่อนที่ ปล่อยปุ่มเพื่อหยุด หากขาดการเชื่อมต่อ watchdog จะหยุดตามเวลาที่ตั้งไว้</p></div>
+<div class="card"><div class="card-head"><h2>การแสดงเพลง + ท่าทาง</h2></div><label for="showSong">เลือกเพลง</label><select id="showSong"></select><label for="showMotion">เลือกท่าทาง</label><select id="showMotion"></select><div class="save-row"><button class="primary command" id="startShow">เริ่มการแสดง</button><button class="command" id="stopSong">หยุดเพลง</button></div><p class="note">ท่าทางวนระหว่างเล่นเพลง เลือก SIX-SEVEN ได้ทั้งเพลงและท่า</p><label for="timbre">สไตล์เสียง</label><select class="command" id="timbre"><option value="music_box">กล่องดนตรี</option><option value="vibrato">ร้องลูกคอ</option><option value="acoustic">เปียโน / คาลิมบา</option><option value="chiptune">เกม 8-bit</option></select></div>
+<div class="card"><div class="card-head"><h2>ตู้เพลง</h2><small id="songCount"></small></div><label for="songFilter" class="muted">หมวดเพลง</label><select class="filter" id="songFilter"><option value="all">ทั้งหมด</option><option value="recreation">สันทนาการ</option><option value="pop">ยอดนิยม</option><option value="game">เกม</option><option value="sfx">เสียงเอฟเฟกต์</option></select><div class="catalog" id="songs">กำลังโหลด…</div></div>
+<div class="card"><div class="card-head"><h2>สีหน้า OLED</h2></div><div class="catalog faces" id="faces">กำลังโหลด…</div></div>
+<div class="card wide"><div class="card-head"><h2>ท่าทางเซอร์โว</h2></div><div class="catalog" id="motions">กำลังโหลด…</div></div>
+</section>
+<section id="hardware" class="panel" role="tabpanel" aria-labelledby="tab-hardware" hidden>
+<div class="notice">Pin ถูกล็อกตามการต่อสายเดิม การบันทึกจะหยุดการแสดงและมอเตอร์ แล้วนำค่าที่ตรวจสอบแล้วไปใช้ทันที เซอร์โวที่เปิดอยู่จะเข้าสู่มุมพักใหม่</div>
+<div class="config-summary"><h2>ตั้งค่าอุปกรณ์อย่างละเอียด</h2><span id="configMessage" role="status">กำลังโหลด config…</span></div>
+<form id="configForm"><fieldset id="configFields" disabled><div class="config-toolbar"><input id="configSearch" type="search" placeholder="ค้นหาการตั้งค่า เช่น มุม ไมค์ ระยะ" aria-label="ค้นหาการตั้งค่า"><button type="button" id="reloadConfig">โหลดค่าจากหุ่นยนต์</button><button type="button" id="defaultConfig">ใช้ค่าเริ่มต้นในแบบฟอร์ม</button></div><div id="configGroups" class="config-grid"></div><div class="save-row"><button class="primary" type="submit" id="saveConfig">บันทึกและใช้งาน</button><button type="button" id="exportConfig">ส่งออก config</button><span class="muted" id="dirtyCount">ยังไม่มีการแก้ไข</span></div><p class="note">เปลี่ยนค่าในแบบฟอร์มยังไม่มีผลจนกดบันทึก ค่าถูกเก็บใน ESP32 และใช้ต่อหลังเปิดเครื่องใหม่ ไม่เขียน flash ซ้ำเมื่อค่าไม่เปลี่ยน</p><details class="card" style="margin-top:16px"><summary>นำเข้า config จากไฟล์</summary><p class="note">เลือกไฟล์ JSON ที่ส่งออกจากหน้านี้ ระบบตรวจทุกค่าและแสดงเป็นฉบับร่างให้ตรวจสอบก่อนบันทึก</p><input id="importConfig" type="file" accept="application/json,.json" aria-label="ไฟล์ config"></details></fieldset></form>
+<div class="grid" style="margin-top:16px"><div class="card"><div class="card-head"><h2>ทดสอบตำแหน่งเซอร์โว</h2></div><p class="note">ใช้ขอบเขตและการชดเชยที่บันทึกไว้ ทดสอบเฉพาะเมื่อพื้นที่รอบตัวหุ่นยนต์ว่าง คำสั่งนี้จะหยุดโหมดอัตโนมัติ</p><div class="servo-test"><label>หัว<input id="testHead" type="range" min="0" max="180" value="90"><output for="testHead">90°</output></label><label>แขนซ้าย<input id="testLeft" type="range" min="0" max="180" value="30"><output for="testLeft">30°</output></label><label>แขนขวา<input id="testRight" type="range" min="0" max="180" value="150"><output for="testRight">150°</output></label></div><button id="testServo" class="command" style="margin-top:12px">ส่งตำแหน่งทดสอบ</button></div><div class="card"><div class="card-head"><h2>คาลิเบรตไมโครโฟน</h2></div><p class="note">วางหุ่นยนต์ในพื้นที่เงียบแล้วกดคาลิเบรต ระบบหยุดเพลงและท่าทาง จากนั้นอ่าน baseline โดยไม่ค้างหน้าเว็บ ค่า baseline วัดใหม่ทุกครั้งที่เปิดเครื่อง</p><p id="calibrationInfo" class="muted">รอข้อมูลจากไมค์</p><button id="calibrateMic" class="command" style="margin-top:12px">คาลิเบรตไมค์ใหม่</button></div><div class="card wide"><div class="card-head"><h2>การต่อสายเดิม · อ่านอย่างเดียว</h2><small id="oledAddress"></small></div><div class="table-wrap"><table><thead><tr><th>อุปกรณ์ / สัญญาณ</th><th>GPIO ที่ล็อกไว้</th></tr></thead><tbody id="pinTable"></tbody></table></div></div></div>
+</section>
+<section id="health" class="panel grid" role="tabpanel" aria-labelledby="tab-health" hidden>
+<div class="card"><div class="card-head"><h2>หน่วยความจำและการทำงาน</h2></div><div class="facts" id="memoryFacts"></div><p class="note">RAM ต่ำสุดและรอบลูปยาวที่สุดนับตั้งแต่บูต รอบลูปรวมเวลารับส่งเว็บด้วย</p></div><div class="card"><div class="card-head"><h2>อุปกรณ์และเครือข่าย</h2></div><div class="facts" id="deviceFacts"></div><p class="note">สถานะพร้อมใช้งานของเซอร์โวและ buzzer เป็นสถานะไดรเวอร์ ไม่ใช่การตรวจสายหรือแรงดันไฟเลี้ยง</p></div><div class="card wide"><h2>ข้อมูลการตั้งค่า</h2><p id="storageStatus" class="note">กำลังอ่าน…</p><p class="note">เว็บทำงานได้โดยไม่ใช้อินเทอร์เน็ต เชื่อม Wi-Fi เดิมหรือ AP ของหุ่นยนต์ แล้วเปิด IP ที่แสดงบน OLED การตั้งค่า Wi-Fi และ pin ยังคงอยู่ใน firmware เดิม</p></div>
+</section>
+</main>
+<div class="footer"><button class="danger" id="emergency">■ หยุดทุกอย่างทันที</button></div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 <script>
-// ================= CLIENT-SIDE CS DATA ARCHITECTURE =================
-let catalogData = { songs: [], faces: [], motions: [] };
-let currentSongFilter = 'all';
-
-function showToast(msg) {
-  const t = document.getElementById('toast');
-  t.innerText = msg;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 1200);
-}
-
-function sendCmd(type, cmd, extra = '') {
-  let url = `/action?type=${encodeURIComponent(type)}&cmd=${encodeURIComponent(cmd)}`;
-  if (extra) url += extra;
-  fetch(url).catch(e => console.error(e));
-}
-
-function setMode(mode) {
-  sendCmd('mode', mode);
-  document.querySelectorAll('.mode-pill').forEach(p => p.classList.remove('active'));
-  event.currentTarget.classList.add('active');
-  showToast('เปลี่ยนโหมดเป็น: ' + mode);
-}
-
-function startShowcase(songId, motionId) {
-  sendCmd('showcase', songId, `&motion=${encodeURIComponent(motionId)}`);
-  showToast('เริ่มการแสดง: ' + songId);
-}
-
-function setTimbre(timbre) {
-  sendCmd('timbre', timbre);
-  document.querySelectorAll('#timbreTabs .filter-tab').forEach(b => b.classList.remove('active'));
-  const target = document.querySelector(`#timbreTabs .filter-tab[data-timbre="${timbre}"]`);
-  if (target) target.classList.add('active');
-  showToast('เปลี่ยนเสียงดนตรี: ' + timbre);
-}
-
-// Render dynamic catalog without hardcoding
-function loadCatalog() {
-  fetch('/api/catalog')
-    .then(r => r.json())
-    .then(data => {
-      catalogData = data;
-      renderSongs();
-      renderFaces();
-      renderMotions();
-    })
-    .catch(err => {
-      console.warn('Catalog load error, retrying in 2s...', err);
-      setTimeout(loadCatalog, 2000);
-    });
-}
-
-function renderSongs() {
-  const container = document.getElementById('songsContainer');
-  container.innerHTML = '';
-  const filtered = (currentSongFilter === 'all') 
-    ? catalogData.songs 
-    : catalogData.songs.filter(s => s.cat === currentSongFilter);
-
-  filtered.forEach(s => {
-    const btn = document.createElement('button');
-    btn.className = 'act-btn';
-    btn.innerHTML = `<span class="act-btn-icon">${s.icon || '🎵'}</span><span class="act-btn-label">${s.title}</span>`;
-    btn.onclick = () => {
-      sendCmd('song', s.id);
-      showToast('เล่นเพลง: ' + s.title);
-    };
-    container.appendChild(btn);
-  });
-}
-
-function filterSongs(cat) {
-  currentSongFilter = cat;
-  document.querySelectorAll('#songTabs .filter-tab').forEach(t => t.classList.remove('active'));
-  event.target.classList.add('active');
-  renderSongs();
-}
-
-function renderFaces() {
-  const container = document.getElementById('facesContainer');
-  container.innerHTML = '';
-  catalogData.faces.forEach(f => {
-    const btn = document.createElement('button');
-    btn.className = 'act-btn';
-    btn.innerHTML = `<span class="act-btn-icon">${f.icon || '👀'}</span><span class="act-btn-label">${f.title}</span>`;
-    btn.onclick = () => {
-      sendCmd('face', f.id);
-      showToast('เปลี่ยนหน้า: ' + f.title);
-    };
-    container.appendChild(btn);
-  });
-}
-
-function renderMotions() {
-  const container = document.getElementById('motionsContainer');
-  container.innerHTML = '';
-  catalogData.motions.forEach(m => {
-    const btn = document.createElement('button');
-    btn.className = 'act-btn';
-    btn.innerHTML = `<span class="act-btn-icon">${m.icon || '💃'}</span><span class="act-btn-label">${m.title}</span>`;
-    btn.onclick = () => {
-      sendCmd('motion', m.id);
-      showToast('ทำท่าทาง: ' + m.title);
-    };
-    container.appendChild(btn);
-  });
-}
-
-// D-Pad touch & mouse event listeners
-const dpadButtons = document.querySelectorAll('.dpad-btn');
-dpadButtons.forEach(btn => {
-  const dir = btn.dataset.dir;
-  const startAction = (e) => {
-    e.preventDefault();
-    btn.classList.add('pressed');
-    sendCmd('motor', dir);
-  };
-  const endAction = (e) => {
-    e.preventDefault();
-    btn.classList.remove('pressed');
-    if (dir !== 'stop') sendCmd('motor', 'stop');
-  };
-
-  btn.addEventListener('mousedown', startAction);
-  btn.addEventListener('mouseup', endAction);
-  btn.addEventListener('touchstart', startAction, { passive: false });
-  btn.addEventListener('touchend', endAction, { passive: false });
-});
-
-// Telemetry Poller
-setInterval(() => {
-  fetch('/telemetry')
-    .then(r => r.json())
-    .then(d => {
-      // Sound HUD
-      document.getElementById('valSound').innerText = d.vol;
-      let soundPct = Math.min(100, Math.round((d.vol / 500) * 100));
-      let barS = document.getElementById('barSound');
-      barS.style.width = soundPct + '%';
-      barS.style.background = (d.vol > 160) ? 'var(--danger)' : 'var(--success)';
-
-      // Distance HUD
-      let distVal = (d.dist < 0 || d.dist > 350) ? '--' : d.dist.toFixed(1);
-      document.getElementById('valDist').innerText = distVal;
-      let distPct = (d.dist < 0) ? 0 : Math.min(100, Math.round((d.dist / 120) * 100));
-      let barD = document.getElementById('barDist');
-      barD.style.width = distPct + '%';
-      barD.style.background = (d.dist > 0 && d.dist < 18) ? 'var(--danger)' : 'var(--primary)';
-    })
-    .catch(() => {});
-}, 90);
-
-loadCatalog();
+'use strict';
+const $ = id => document.getElementById(id);
+let config=null, catalog={songs:[],faces:[],motions:[]}, online=false, saving=false, loadingConfig=false, pollMs=500, toastTimer;
+const groups={motor:'มอเตอร์ล้อ · L9110S',servo:'เซอร์โว · การทำงานร่วมกัน',head:'เซอร์โวหัว · GPIO 18',arm_left:'แขนซ้าย · GPIO 19',arm_right:'แขนขวา · GPIO 23',mic:'ไมโครโฟน · KY-037',sonar:'วัดระยะ · Ultrasonic',audio:'เสียง · Buzzer',oled:'จอ · SH1106 OLED',behavior:'พฤติกรรม Interactive',system:'หน้าเว็บและข้อมูลสด'};
+const errors={form_encoding_required:'รูปแบบคำขอไม่รองรับ กรุณาโหลดหน้าเว็บใหม่',invalid_request_body:'ข้อมูลคำขอไม่ถูกต้อง',too_many_arguments:'จำนวนการตั้งค่าในคำขอมากเกินกำหนด',robot_header_required:'คำขอไม่ถูกต้อง กรุณาโหลดหน้าเว็บใหม่',config_changed_reload:'มีการเปลี่ยน config จากหน้าต่างอื่น กรุณาโหลดค่าล่าสุดก่อนบันทึก',save_too_soon:'กรุณารอ 2 วินาทีก่อนบันทึกอีกครั้ง',storage_unavailable:'ไม่สามารถเปิดที่เก็บ config ได้',storage_write_failed:'บันทึกไม่สำเร็จ ค่าปัจจุบันยังไม่เปลี่ยน',unknown_command_or_hardware_disabled:'คำสั่งไม่พร้อมใช้งาน ตรวจว่าอุปกรณ์เปิดอยู่และไดรเวอร์พร้อม',mic_disabled:'กรุณาเปิดไมโครโฟนก่อนคาลิเบรต',invalid_servo_angle:'มุมทดสอบต้องเป็นจำนวนเต็ม 0–180',unknown_config_field:'พบชื่อการตั้งค่าที่ไม่รองรับ',config_request_too_large:'ข้อมูล config ใหญ่เกินกำหนด'};
+function messageFor(code){const field=config?.schema.find(s=>s.key===code);return errors[code]||(field?'ตรวจสอบ '+field.label+' และความสัมพันธ์ของมุม / ระยะ':'คำขอไม่สำเร็จ: '+code);}
+function toast(message,error=false){clearTimeout(toastTimer);$('toast').textContent=message;$('toast').classList.toggle('error',error);$('toast').hidden=false;toastTimer=setTimeout(()=>$('toast').hidden=true,error?6500:3000);}
+async function request(path,options={}){const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),5000);try{const response=await fetch(path,{cache:'no-store',...options,signal:controller.signal});const data=await response.json();if(!response.ok)throw new Error(messageFor(data.error||response.status));return data;}catch(e){if(e.name==='AbortError'||e instanceof TypeError)throw new Error('ติดต่อหุ่นยนต์ไม่ได้ ตรวจสอบ Wi-Fi แล้วลองใหม่');throw e;}finally{clearTimeout(timeout);}}
+async function command(type,cmd,extra={}){return request('/action',{method:'POST',headers:{'X-Robot-Request':'1'},body:new URLSearchParams({type,cmd,...extra})});}
+async function act(type,cmd,extra={},success='ส่งคำสั่งแล้ว'){try{await command(type,cmd,extra);if(success)toast(success);return true;}catch(e){toast(e.message,true);return false;}}
+function setOnline(value){online=value;$('connection').textContent=value?'● เชื่อมต่อแล้ว':'● ขาดการเชื่อมต่อ';$('connection').className='status '+(value?'online':'offline');document.querySelectorAll('.command').forEach(b=>b.disabled=!value);if(!value)releaseDrive();}
+function switchTab(id){document.querySelectorAll('[data-tab]').forEach(b=>{const active=b.dataset.tab===id;b.setAttribute('aria-selected',String(active));b.tabIndex=active?0:-1;});document.querySelectorAll('.panel').forEach(p=>p.hidden=p.id!==id);}
+document.querySelectorAll('[data-tab]').forEach((b,index)=>{b.addEventListener('click',()=>switchTab(b.dataset.tab));b.addEventListener('keydown',e=>{if(e.altKey||e.ctrlKey||e.metaKey)return;const tabs=[...document.querySelectorAll('[data-tab]')];let next;if(e.key==='ArrowRight')next=(index+1)%tabs.length;else if(e.key==='ArrowLeft')next=(index+tabs.length-1)%tabs.length;else if(e.key==='Home')next=0;else if(e.key==='End')next=tabs.length-1;else return;e.preventDefault();switchTab(tabs[next].dataset.tab);tabs[next].focus();});});
+$('modes').querySelectorAll('button').forEach(b=>b.onclick=()=>act('mode',b.dataset.mode,{},'เปลี่ยนโหมดแล้ว'));
+$('startShow').onclick=()=>act('showcase',$('showSong').value,{motion:$('showMotion').value},'เริ่มการแสดงแล้ว');
+$('stopSong').onclick=()=>act('song','stop',{},'หยุดเพลงแล้ว');
+$('timbre').onchange=()=>act('timbre',$('timbre').value,{},'เปลี่ยนสไตล์เสียงแล้ว');
+$('emergency').onclick=async()=>{releaseDrive();await act('system','stop_all',{},'หยุดมอเตอร์ เสียง และท่าทางแล้ว');};
+$('calibrateMic').onclick=()=>act('system','calibrate_mic',{},'เริ่มวัด baseline ในพื้นที่เงียบ');
+$('testServo').onclick=()=>{if(dirtyKeys().length){toast('บันทึก config ก่อนทดสอบตำแหน่งใหม่',true);return;}act('servo','position',{head:$('testHead').value,left:$('testLeft').value,right:$('testRight').value},'ส่งตำแหน่งทดสอบแล้ว');};
+document.querySelectorAll('.servo-test input').forEach(input=>input.oninput=()=>input.nextElementSibling.textContent=input.value+'°');
+let drive=null,driveBusy=false,driveTimer=null,driveEpoch=0;
+function releaseDrive(){const active=drive;drive=null;driveEpoch++;clearTimeout(driveTimer);document.querySelectorAll('[data-dir]').forEach(b=>b.classList.remove('pressed'));if(active)command('motor','stop').catch(()=>{});}
+async function drivePulse(epoch){if(!drive||epoch!==driveEpoch||driveBusy)return;const dir=drive;driveBusy=true;try{await command('motor',dir);}catch(e){releaseDrive();toast(e.message,true);}finally{driveBusy=false;if(!drive||epoch!==driveEpoch){command('motor','stop').catch(()=>{});}else driveTimer=setTimeout(()=>drivePulse(epoch),150);}}
+document.querySelectorAll('[data-dir]').forEach(b=>{b.addEventListener('pointerdown',e=>{if(b.disabled||e.button!==0||driveBusy)return;e.preventDefault();releaseDrive();if(b.dataset.dir==='stop'){act('motor','stop',{},'หยุดมอเตอร์แล้ว');return;}drive=b.dataset.dir;b.classList.add('pressed');b.setPointerCapture(e.pointerId);drivePulse(driveEpoch);});['pointerup','pointercancel','lostpointercapture'].forEach(event=>b.addEventListener(event,releaseDrive));b.addEventListener('keydown',e=>{if((e.key===' '||e.key==='Enter')&&!e.repeat&&!b.disabled){e.preventDefault();releaseDrive();if(b.dataset.dir==='stop')act('motor','stop');else{drive=b.dataset.dir;b.classList.add('pressed');drivePulse(driveEpoch);}}});b.addEventListener('keyup',e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();releaseDrive();}});b.addEventListener('blur',releaseDrive);});
+window.addEventListener('blur',releaseDrive);window.addEventListener('pagehide',()=>{releaseDrive();fetch('/action',{method:'POST',headers:{'X-Robot-Request':'1'},body:new URLSearchParams({type:'motor',cmd:'stop'}),keepalive:true}).catch(()=>{});});document.addEventListener('visibilitychange',()=>{if(document.hidden)releaseDrive();});
+function renderCatalog(items,target,type){const container=$(target);container.replaceChildren();items.forEach(item=>{const b=document.createElement('button');b.className='command';b.disabled=!online;const icon=document.createElement('span');icon.className='icon';icon.textContent=item.icon||'•';const title=document.createElement('span');title.textContent=item.title;b.append(icon,title);b.onclick=()=>act(type,item.id,{},item.title);container.append(b);});}
+function renderSongs(){const category=$('songFilter').value;const songs=catalog.songs.filter(s=>category==='all'||s.cat===category);renderCatalog(songs,'songs','song');$('songCount').textContent=songs.length+' รายการ';}
+$('songFilter').onchange=renderSongs;
+async function loadCatalog(){try{catalog=await request('/api/catalog');renderSongs();renderCatalog(catalog.faces,'faces','face');renderCatalog(catalog.motions,'motions','motion');[['showSong',catalog.songs],['showMotion',catalog.motions]].forEach(([id,items])=>{const select=$(id);select.replaceChildren();items.forEach(item=>{const option=document.createElement('option');option.value=item.id;option.textContent=item.title;select.append(option);});if(items.some(item=>item.id==='six_seven'))select.value='six_seven';});}catch(e){toast(e.message,true);setTimeout(loadCatalog,4000);}}
+function valuesFromForm(){const values={};if(!config)return values;config.schema.forEach(s=>{const input=$('cfg-'+s.key);values[s.key]=s.unit==='bool'?(input.checked?1:0):(input.value.trim()===''?NaN:Number(input.value));});return values;}
+function dirtyKeys(){if(!config)return [];const values=valuesFromForm();return config.schema.filter(s=>values[s.key]!==config.values[s.key]).map(s=>s.key);}
+function updateDirty(){const keys=dirtyKeys();$('dirtyCount').textContent=keys.length?'แก้ไข '+keys.length+' ค่า · ยังไม่ได้บันทึก':'ตรงกับค่าที่บันทึกไว้';config?.schema.forEach(s=>$('cfg-'+s.key).closest('.field').classList.toggle('changed',keys.includes(s.key)));}
+function setDraft(values){config.schema.forEach(s=>{const input=$('cfg-'+s.key);if(s.unit==='bool')input.checked=!!values[s.key];else input.value=values[s.key];});updateDirty();}
+function validateValues(values){if(!config)throw new Error('ยังไม่มีข้อมูล config');const keys=Object.keys(values);if(keys.length!==config.schema.length||keys.some(k=>!config.schema.some(s=>s.key===k)))throw new Error('ไฟล์ต้องมีการตั้งค่าครบและไม่มีชื่อที่ไม่รองรับ');config.schema.forEach(s=>{const v=values[s.key];if(!Number.isInteger(v)||v<s.min||v>s.max)throw new Error(s.label+' ต้องเป็นจำนวนเต็ม '+s.min+'–'+s.max);});[['head','หัว'],['left','แขนซ้าย'],['right','แขนขวา']].forEach(([key,label])=>{const home=(values[key+'_reverse']?180-values[key+'_center']:values[key+'_center'])+values[key+'_trim'];if(values[key+'_min']>=values[key+'_max']||home<values[key+'_min']||home>values[key+'_max'])throw new Error(label+': มุมต่ำสุดต้องน้อยกว่ามุมสูงสุด และมุมพักหลังชดเชยต้องอยู่ในช่วง');});if(values.servo_min_us>=values.servo_max_us)throw new Error('พัลส์ต่ำสุดต้องน้อยกว่าพัลส์สูงสุด');if(values.proximity_close_cm>=values.proximity_greeting_cm)throw new Error('ระยะใกล้เกินไปต้องน้อยกว่าระยะทักทาย');}
+function renderConfig(){const container=$('configGroups');container.replaceChildren();Object.entries(groups).forEach(([group,title])=>{const specs=config.schema.filter(s=>s.group===group);if(!specs.length)return;const details=document.createElement('details');details.className='group';details.open=true;const summary=document.createElement('summary');summary.textContent=title;const fields=document.createElement('div');fields.className='fields';specs.forEach(s=>{const field=document.createElement('div');field.className='field';field.dataset.search=(title+' '+s.label+' '+s.hint+' '+s.key).toLowerCase();const label=document.createElement('label');label.htmlFor='cfg-'+s.key;const text=document.createElement('span');text.textContent=s.label;const input=document.createElement('input');input.id='cfg-'+s.key;input.name=s.key;input.type=s.unit==='bool'?'checkbox':'number';input.step='1';input.min=s.min;input.max=s.max;if(s.unit!=='bool')input.required=true;const range=document.createElement('small');range.textContent=s.unit==='bool'?'ค่าเริ่มต้น: '+(s.default?'เปิด':'ปิด'):'ช่วง '+s.min+'–'+s.max+' '+s.unit+' · เริ่มต้น '+s.default;const hint=document.createElement('small');hint.id='hint-'+s.key;hint.textContent=s.hint;input.setAttribute('aria-describedby',hint.id);label.append(text,input);field.append(label,range,hint);input.addEventListener('input',updateDirty);fields.append(field);});details.append(summary,fields);container.append(details);});setDraft(config.values);$('pinTable').replaceChildren();Object.entries(config.pins).forEach(([name,pin])=>{const tr=document.createElement('tr');[name,String(pin)].forEach(value=>{const td=document.createElement('td');td.textContent=value;tr.append(td);});$('pinTable').append(tr);});$('oledAddress').textContent='I2C address 0x'+config.oledAddress.toString(16).toUpperCase();$('configFields').disabled=false;$('configSearch').value='';$('configMessage').textContent='ฉบับที่ '+config.revision+' · '+config.schema.length+' ค่า';const status={saved:'โหลดค่าที่บันทึกใน ESP32 แล้ว',defaults:'กำลังใช้ค่าเริ่มต้น ยังไม่มี config ที่บันทึก',invalid_saved_config:'ข้อมูลที่บันทึกไว้ไม่ผ่านการตรวจสอบ ระบบใช้ค่าเริ่มต้น',storage_unavailable:'ที่เก็บ config ไม่พร้อม ระบบใช้ค่าเริ่มต้น'};$('storageStatus').textContent=(status[config.storage]||config.storage)+' · Firmware '+config.version+' · config ฉบับที่ '+config.revision;}
+async function loadConfig(){if(loadingConfig||saving)return;loadingConfig=true;$('configFields').disabled=true;try{const next=await request('/api/config');config=next;pollMs=config.values.telemetry_interval_ms;renderConfig();}catch(e){$('configMessage').textContent=e.message;toast(e.message,true);if(!config)setTimeout(loadConfig,4000);}finally{loadingConfig=false;$('configFields').disabled=!config;}}
+$('reloadConfig').onclick=()=>{if(dirtyKeys().length&&!confirm('ทิ้งค่าฉบับร่างแล้วโหลดค่าจากหุ่นยนต์?'))return;loadConfig();};
+$('defaultConfig').onclick=()=>{const values={};config.schema.forEach(s=>values[s.key]=s.default);setDraft(values);toast('ใส่ค่าเริ่มต้นในแบบฟอร์มแล้ว ตรวจสอบก่อนบันทึก');};
+$('configSearch').oninput=()=>{const query=$('configSearch').value.toLowerCase().trim();document.querySelectorAll('.group').forEach(g=>{const fields=[...g.querySelectorAll('.field')];fields.forEach(f=>f.hidden=!f.dataset.search.includes(query));g.hidden=fields.every(f=>f.hidden);if(query)g.open=true;});};
+$('configForm').onsubmit=async e=>{e.preventDefault();if(saving||!config)return;const values=valuesFromForm();try{validateValues(values);}catch(error){toast(error.message,true);return;}if(!dirtyKeys().length){toast('ยังไม่มีค่าที่เปลี่ยนแปลง');return;}releaseDrive();saving=true;$('configFields').disabled=true;$('configMessage').textContent='กำลังบันทึก…';try{const result=await request('/api/config',{method:'POST',headers:{'X-Robot-Request':'1'},body:new URLSearchParams({revision:config.revision,...values})});config.values=values;config.revision=result.revision;config.storage='saved';pollMs=values.telemetry_interval_ms;renderConfig();toast('บันทึกและใช้ config แล้ว');}catch(error){$('configMessage').textContent=error.message;toast(error.message,true);}finally{saving=false;$('configFields').disabled=!config;}};
+$('exportConfig').onclick=()=>{try{const values=valuesFromForm();validateValues(values);const blob=new Blob([JSON.stringify({schemaVersion:1,values},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='robot-config.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('ส่งออกค่าจากแบบฟอร์มแล้ว');}catch(e){toast(e.message,true);}};
+$('importConfig').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>8192)throw new Error('ไฟล์ config ต้องไม่เกิน 8 KB');const data=JSON.parse(await file.text());if(data.schemaVersion!==1||!data.values)throw new Error('รูปแบบไฟล์หรือรุ่น config ไม่รองรับ');validateValues(data.values);setDraft(data.values);toast('นำเข้าฉบับร่างแล้ว ตรวจสอบก่อนกดบันทึก');}catch(error){toast('นำเข้าไม่สำเร็จ: '+error.message,true);}finally{e.target.value='';}};
+function facts(id,entries){const container=$(id);container.replaceChildren();entries.forEach(([title,value])=>{const fact=document.createElement('div');fact.className='fact';const label=document.createElement('small');label.textContent=title;const text=document.createElement('span');text.textContent=value;fact.append(label,text);container.append(fact);});}
+const kb=value=>(value/1024).toFixed(1)+' KB';
+function updateTelemetry(d){setOnline(true);pollMs=d.pollMs||500;$('sound').textContent=d.vol;$('distance').textContent=d.distanceValid?d.dist.toFixed(1):'—';$('heap').textContent=(d.heapFree/1024).toFixed(1);const sec=Math.floor(d.uptimeMs/1000);$('uptime').textContent=Math.floor(sec/3600)+'h '+Math.floor(sec%3600/60)+'m';$('firmware').textContent='Firmware '+d.version;$('micStatus').textContent=d.calibrating?'กำลังคาลิเบรต…':'Peak '+d.peak+' · baseline '+d.baseline;$('distanceStatus').textContent=d.distanceValid?'ข้อมูล '+d.distanceAgeMs+' ms ที่แล้ว':'ไม่มี echo / ปิดเซนเซอร์';$('calibrationInfo').textContent=d.calibrating?'กำลังวัด…':'Baseline ปัจจุบัน: '+d.baseline;$('liveMode').textContent='โหมด '+d.mode+' · มอเตอร์ '+d.dir+' · '+(d.isPlaying?'กำลังเล่นเพลง':'เสียงหยุด');$('modes').querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mode===d.mode)));$('timbre').value=d.timbre;facts('memoryFacts',[['RAM ว่าง',kb(d.heapFree)],['RAM ว่างต่ำสุด',kb(d.heapMin)],['บล็อกว่างใหญ่สุด',kb(d.heapLargest)],['รอบลูปยาวที่สุด',(d.maxLoopUs/1000).toFixed(1)+' ms'],['Firmware',d.version],['Config ฉบับที่',d.revision]]);const v=config?.values;facts('deviceFacts',[['มอเตอร์',v?.motor_enabled===0?'ปิด':d.motorReady?'Watchdog พร้อม':'Watchdog ไม่พร้อม'],['OLED',v?.oled_enabled===0?'ปิด':d.oledReady?'พร้อม':'ไม่พบจอ'],['เซอร์โว',v?.servo_enabled===0?'ปิด':d.servoReady?'PWM พร้อม':'PWM ไม่พร้อม'],['Buzzer',v?.audio_enabled===0?'ปิด':d.audioReady?'ไดรเวอร์พร้อม':'จัดสรร PWM ไม่สำเร็จ'],['เครือข่าย',d.networkMode==='ap'?'Access Point':'Wi-Fi router'],['IP',d.ip],['สัญญาณ Wi-Fi',d.networkMode==='ap'?'—':d.rssi+' dBm']]);if(config&&d.revision!==config.revision&&!saving)$('configMessage').textContent='มี config ฉบับใหม่ '+d.revision+' · กดโหลดค่าจากหุ่นยนต์';}
+async function poll(){if(!document.hidden){try{updateTelemetry(await request('/telemetry'));}catch(e){setOnline(false);$('liveMode').textContent='ข้อมูลอาจล้าสมัย · ขาดการเชื่อมต่อ';}}setTimeout(poll,online?Math.max(250,pollMs):1500);}
+setOnline(false);loadCatalog();loadConfig();poll();
+window.addEventListener('beforeunload',e=>{if(dirtyKeys().length){e.preventDefault();e.returnValue='';}});
 </script>
-
 </body>
 </html>
 )rawliteral";
-
-#endif // WEBUI_H
+#endif

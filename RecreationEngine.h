@@ -36,15 +36,19 @@ public:
     _mode = MODE_MANUAL;
   }
 
-  void setMode(RecreationMode mode) {
+  void setMode(RecreationMode mode, bool center = true) {
+    _motor.stop();
+    _motion.freeze();
     _mode = mode;
     _showcaseActive = false;
 
     if (_mode == MODE_MANUAL) {
       _face.setFace("normal");
-      _motion.toCenter();
+      if (center) _motion.toCenter();
       _motor.stop();
     } else if (_mode == MODE_PARTY_BEAT) {
+      _lastPartyMove = millis();
+      _partyRested = false;
       _face.setFace("music");
       _face.setTemporaryFace("happy", 1200);
       _song.playById("sfx_happy");
@@ -67,9 +71,11 @@ public:
 
   // Start synchronized song & dance show
   bool startShowcase(const char* songId, const char* motionId) {
+    _motor.stop();
+    _song.stop(); _motion.freeze();
     bool sOk = _song.playById(songId);
     bool mOk = _motion.playById(motionId, true); // Loop dance while song plays
-    if (sOk || mOk) {
+    if (sOk && mOk) {
       _mode = MODE_SHOWCASE;
       _showcaseActive = true;
       if ((motionId && strcmp(motionId, "six_seven") == 0) || (songId && strcmp(songId, "six_seven") == 0)) {
@@ -79,6 +85,8 @@ public:
       }
       return true;
     }
+    _song.stop(); _motion.freeze();
+    _mode = MODE_MANUAL; _showcaseActive = false;
     return false;
   }
 
@@ -120,6 +128,7 @@ private:
   unsigned long _lastPartyMove;
   bool _showcaseActive;
   unsigned long _lastProximityReaction;
+  bool _partyRested = false;
 
   void _updatePartyMode() {
     unsigned long now = millis();
@@ -128,6 +137,7 @@ private:
     if (_sensor.consumeBeat()) {
       _partyStep = (_partyStep + 1) % 4;
       _lastPartyMove = now;
+      _partyRested = false;
 
       // Dynamic reactive body gestures
       switch (_partyStep) {
@@ -148,27 +158,29 @@ private:
           _face.setFace("cool");
           break;
       }
-    } else if (now - _lastPartyMove >= 1200) {
+    } else if (!_partyRested && now - _lastPartyMove >= 1200) {
       // Quiet down if no beat for 1.2 seconds
       if (_motion.isMoving() == false) {
         _motion.toCenter();
         _face.setFace("normal");
+        _partyRested = true;
       }
     }
   }
 
   void _updateInteractiveMode() {
     unsigned long now = millis();
-    if (now - _lastProximityReaction < 1500) return; // Debounce reactions
+    if (now - _lastProximityReaction < (uint32_t)robotSettings.get(PROX_COOLDOWN)) return;
+    if (!_sensor.distanceValid()) return;
 
     float dist = _sensor.distance();
-    if (dist > 0.0f && dist < 18.0f) {
+    if (dist > 0.0f && dist < robotSettings.get(PROX_CLOSE)) {
       // Too close! Playful surprise reaction
       _lastProximityReaction = now;
       _face.setTemporaryFace("surprise", 1600);
       _song.playById("sfx_alarm");
       _motion.playById("head_shake");
-    } else if (dist >= 18.0f && dist <= 45.0f) {
+    } else if (dist >= robotSettings.get(PROX_CLOSE) && dist <= robotSettings.get(PROX_GREETING)) {
       // Friendly greeting zone!
       _lastProximityReaction = now;
       _face.setTemporaryFace("happy", 1800);

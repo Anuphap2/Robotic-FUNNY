@@ -1,0 +1,11 @@
+# Local build products and previews; source and tests remain versioned.
+build/
+.build/
+*.bin
+*.elf
+*.map
+*.hex
+*.o
+*.pyc
+__pycache__/
+test-results/
