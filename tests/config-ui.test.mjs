@@ -14,7 +14,7 @@ const defaults = () => Object.fromEntries(schema.map(s=>[s.key,s.default]));
 const validatorSource = source.slice(source.indexOf('function validateValues('),source.indexOf('function renderConfig('));
 const validate = runInNewContext(validatorSource+'; validateValues',{config:{schema}});
 test('default configuration and supported boundary combinations are accepted',()=>{
-  assert.equal(schema.length,42); assert.equal(new Set(schema.map(s=>s.key)).size,42);
+  assert.equal(schema.length,51); assert.equal(new Set(schema.map(s=>s.key)).size,51);
   validate(defaults());
   validate({...defaults(),head_min:20,head_max:150,head_center:60,head_trim:10,head_reverse:1});
   validate({...defaults(),motor_timeout_ms:300,audio_volume_pct:0,telemetry_interval_ms:5000,servo_enabled:0});
@@ -48,4 +48,42 @@ test('blank numeric form values are not silently exported as zero',()=>{
   const formSource=source.slice(source.indexOf('function valuesFromForm('),source.indexOf('function dirtyKeys('));
   const read=runInNewContext(formSource+'; valuesFromForm',{config:{schema},$:id=>inputs[id]});
   assert.equal(Number.isNaN(read().head_trim),true);assert.throws(()=>validate(read()));
+});
+test('autonomous clearance and following distances respect stop and tracking zones',()=>{
+  assert.throws(()=>validate({...defaults(),auto_stop_cm:60,auto_clear_cm:60}));
+  assert.throws(()=>validate({...defaults(),auto_stop_cm:65,follow_distance_cm:65}));
+  assert.throws(()=>validate({...defaults(),follow_distance_cm:100,follow_max_cm:105}));
+  validate({...defaults(),auto_stop_cm:25,auto_clear_cm:30,follow_distance_cm:30,follow_max_cm:60});
+});
+const importerSource=source.slice(source.indexOf('function importValues('),source.indexOf("$('importConfig').onchange="));
+const importValues=runInNewContext(validatorSource+importerSource+'; importValues',{config:{schema}});
+test('v1 imports preserve all 42 settings and add only new behavior defaults',()=>{
+  const old=Object.fromEntries(schema.slice(0,42).map(s=>[s.key,s.default]));
+  old.head_trim=10;old.audio_volume_pct=55;
+  const result=importValues({schemaVersion:1,values:old});
+  assert.equal(result.head_trim,10);assert.equal(result.audio_volume_pct,55);
+  for(const s of schema.slice(42))assert.equal(result[s.key],s.default);
+  assert.throws(()=>importValues({schemaVersion:1,values:{...old,PIN_ECHO:4}}));
+  const missing={...old};delete missing.head_trim;
+  assert.throws(()=>importValues({schemaVersion:1,values:missing}));
+});
+test('v2 import validates the complete draft and bounded request fits the server',()=>{
+  const values=defaults();values.auto_pulse_ms=60;
+  assert.equal(importValues({schemaVersion:2,values}).auto_pulse_ms,60);
+  assert.throws(()=>importValues({schemaVersion:3,values}));
+  assert.throws(()=>importValues({schemaVersion:2,values:{...values,auto_pulse_ms:301}}));
+  const maximum=Object.fromEntries(schema.map(s=>[s.key,Math.abs(s.min)>s.max?s.min:s.max]));
+  assert.ok(new URLSearchParams({revision:2147483647,...maximum}).toString().length<=2048);
+});
+test('closing an idle dashboard preserves autonomy; active manual driving sends a stop',()=>{
+  const exitSource=source.slice(source.indexOf('function handlePageExit('),source.indexOf("window.addEventListener('blur'"));
+  for(const [drive,driveBusy,expectedStops] of [[null,false,0],['forward',false,1],[null,true,1]]){
+    const stops=[];let releases=0;
+    const exit=runInNewContext(exitSource+'; handlePageExit',{
+      drive,driveBusy,releaseDrive:()=>releases++,URLSearchParams,
+      fetch:(path,options)=>{stops.push({path,options});return Promise.resolve();}
+    });
+    exit();assert.equal(releases,1);assert.equal(stops.length,expectedStops);
+    if(expectedStops){assert.equal(stops[0].options.keepalive,true);assert.equal(stops[0].options.body.get('cmd'),'stop');}
+  }
 });

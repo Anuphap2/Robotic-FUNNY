@@ -13,7 +13,7 @@
 
 RobotSettings robotSettings;
 ConfigStore configStore;
-const char* const FIRMWARE_VERSION = "2.0.0";
+const char* const FIRMWARE_VERSION = "2.1.0";
 uint32_t maxLoopUs = 0;
 #include "SongSystem.h"
 #include "FaceSystem.h"
@@ -67,13 +67,13 @@ void stopAll() {
 }
 
 void handleTelemetry() {
-  char json[1024];
-  snprintf(json, sizeof(json),
+  char json[1280];
+  int length = snprintf(json, sizeof(json),
     "{\"vol\":%d,\"peak\":%d,\"dist\":%.1f,\"distanceValid\":%s,\"distanceAgeMs\":%lu,"
     "\"baseline\":%d,\"calibrating\":%s,\"mode\":\"%s\",\"dir\":\"%s\",\"face\":\"%s\","
     "\"timbre\":\"%s\",\"isPlaying\":%s,\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargest\":%lu,"
     "\"uptimeMs\":%lu,\"maxLoopUs\":%lu,\"oledReady\":%s,\"servoReady\":%s,\"audioReady\":%s,\"motorReady\":%s,"
-    "\"rssi\":%d,\"networkMode\":\"%s\",\"ip\":\"%s\",\"version\":\"%s\",\"revision\":%lu,\"pollMs\":%ld}",
+    "\"rssi\":%d,\"networkMode\":\"%s\",\"ip\":\"%s\",\"version\":\"%s\",\"revision\":%lu,\"pollMs\":%ld,\"interactive\":\"%s\",\"targetClass\":\"%s\",\"decision\":\"%s\",\"targetConfirmed\":%s,\"canConfirm\":%s}",
     sensorManager.volume(), sensorManager.peakVolume(), sensorManager.distance(),
     sensorManager.distanceValid() ? "true" : "false", (unsigned long)sensorManager.distanceAge(),
     sensorManager.baseline(), sensorManager.calibrating() ? "true" : "false",
@@ -87,7 +87,10 @@ void handleTelemetry() {
     WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0,
     WiFi.status() == WL_CONNECTED ? "station" : "ap",
     (WiFi.status() == WL_CONNECTED ? WiFi.localIP() : WiFi.softAPIP()).toString().c_str(),
-    FIRMWARE_VERSION, (unsigned long)configStore.revision(), (long)robotSettings.get(TELEMETRY_INTERVAL));
+    FIRMWARE_VERSION, (unsigned long)configStore.revision(), (long)robotSettings.get(TELEMETRY_INTERVAL),
+    recreationEngine.interactiveString(), recreationEngine.decisionClass(), recreationEngine.decisionReason(),
+    recreationEngine.targetConfirmed() ? "true" : "false", recreationEngine.canConfirmTarget() ? "true" : "false");
+  if (length < 0 || static_cast<size_t>(length) >= sizeof(json)) { sendError(500, "telemetry_too_large"); return; }
   server.sendHeader("Cache-Control", "no-store");
   server.send(200, "application/json", json);
 }
@@ -125,7 +128,7 @@ void handleCatalog() {
 void handleGetConfig() {
   JsonResponse out(server);
   out.raw("{"); out.key("revision"); out.number(configStore.revision());
-  out.raw(","); out.key("schemaVersion"); out.number(1);
+  out.raw(","); out.key("schemaVersion"); out.number(2);
   out.raw(","); out.key("version"); out.quoted(FIRMWARE_VERSION);
   out.raw(","); out.key("storage"); out.quoted(configStore.status());
   out.raw(",\"values\":{");
@@ -213,11 +216,22 @@ void handleAction() {
   else if (type == "system" && cmd == "calibrate_mic") {
     if (!robotSettings.get(MIC_ENABLED)) { sendError(409, "mic_disabled"); return; }
     stopAll(); sensorManager.startCalibration(); ok = true;
-  } else if (type == "motor") ok = motorController.handleCommand(cmd);
+  } else if (type == "motor") {
+    if (recreationEngine.mode() != MODE_MANUAL) recreationEngine.setMode(MODE_MANUAL, false);
+    ok = motorController.handleCommand(cmd);
+  }
   else if (type == "mode") {
     if (cmd == "manual") { recreationEngine.setMode(MODE_MANUAL); ok = true; }
     else if (cmd == "party" && robotSettings.get(MIC_ENABLED) && robotSettings.get(SERVO_ENABLED)) { recreationEngine.setMode(MODE_PARTY_BEAT); ok = true; }
     else if (cmd == "interactive" && robotSettings.get(SONAR_ENABLED)) { recreationEngine.setMode(MODE_INTERACTIVE); ok = true; }
+  } else if (type == "interactive") {
+    if (cmd == "greet") ok = recreationEngine.setInteractive(INTERACT_GREET);
+    else if (cmd == "roam") ok = recreationEngine.setInteractive(INTERACT_ROAM);
+    else if (cmd == "follow") ok = recreationEngine.setInteractive(INTERACT_FOLLOW);
+    else if (cmd == "confirm") {
+      ok = recreationEngine.confirmTarget();
+      if (!ok) { sendError(409, "target_not_confirmable"); return; }
+    }
   } else if (type == "showcase") {
     String motion = server.hasArg("motion") ? server.arg("motion") : "dance";
     if (motion.length() <= 64) ok = recreationEngine.startShowcase(cmd.c_str(), motion.c_str());
@@ -233,6 +247,7 @@ void handleAction() {
     else ok = false;
   } else if (type == "face") ok = faceEngine.setFace(cmd.c_str());
   else if (type == "motion") {
+    if (recreationEngine.mode() != MODE_MANUAL) recreationEngine.setMode(MODE_MANUAL, false);
     ok = motionPlayer.playById(cmd.c_str());
     if (ok && cmd == "six_seven") faceEngine.setTemporaryFace("six_seven", 3000);
   } else if (type == "servo") {
@@ -245,7 +260,10 @@ void handleAction() {
     }
   } else if (type.length() == 0) {
     if (cmd == "stop_all") { stopAll(); ok = true; }
-    else ok = motorController.handleCommand(cmd) || faceEngine.setFace(cmd.c_str()) || songPlayer.playById(cmd.c_str()) || motionPlayer.playById(cmd.c_str());
+    else {
+      if (recreationEngine.mode() != MODE_MANUAL) recreationEngine.setMode(MODE_MANUAL, false);
+      ok = motorController.handleCommand(cmd) || faceEngine.setFace(cmd.c_str()) || songPlayer.playById(cmd.c_str()) || motionPlayer.playById(cmd.c_str());
+    }
   }
   if (!ok) { sendError(422, "unknown_command_or_hardware_disabled"); return; }
   server.sendHeader("Cache-Control", "no-store");

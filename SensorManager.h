@@ -51,6 +51,7 @@ public:
   int baseline() const { return _baseline; }
   bool calibrating() const { return _calibrating; }
   float distance() const { return _distance; }
+  uint32_t distanceSequence() const { return _distanceSequence; }
   uint32_t distanceAge() const { return _distance < 0 ? 0 : millis() - _lastDistance; }
   bool distanceValid() const { return _distance > 0 && distanceAge() < (uint32_t)robotSettings.get(SONAR_INTERVAL) * 3; }
   bool consumeBeat() {
@@ -63,6 +64,7 @@ private:
   float _distance = -1;
   bool _beat = false, _calibrating = false;
   uint32_t _lastMic = 0, _lastBeat = 0, _lastSonar = 0, _lastDistance = 0;
+  uint32_t _distanceSequence = 0;
   uint32_t _calibrationSum = 0;
   uint16_t _calibrationCount = 0;
   portMUX_TYPE _echoMux = portMUX_INITIALIZER_UNLOCKED;
@@ -84,7 +86,7 @@ private:
     if (done) {
       float cm = pulse * 0.01715f + robotSettings.get(DISTANCE_OFFSET) / 10.0f;
       _distance = pulse >= 100 && pulse <= (uint32_t)robotSettings.get(SONAR_TIMEOUT) && cm > 0 ? cm : -1;
-      _lastDistance = now;
+      _lastDistance = now; ++_distanceSequence;
     }
     if (!waiting && now - _lastSonar >= (uint32_t)robotSettings.get(SONAR_INTERVAL)) {
       _lastSonar = now;

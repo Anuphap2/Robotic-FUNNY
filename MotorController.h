@@ -42,6 +42,12 @@ public:
   void turnLeft() { request(LEFT); }
   void turnRight() { request(RIGHT); }
   void spinDance() { request(SPIN); }
+  // Autonomous pulses have their own short lease, enforced by the timer even
+  // if the web server stalls. A pulse is issued once, never renewed in flight.
+  bool pulse(Direction direction, uint32_t durationMs) {
+    if (direction != FORWARD && direction != LEFT && direction != RIGHT) return false;
+    return request(direction, constrain(durationMs, 60UL, 300UL));
+  }
   bool handleCommand(const String& cmd) {
     if (cmd == "stop") { stop(); return true; }
     if (cmd == "forward") return request(FORWARD);
@@ -57,7 +63,7 @@ public:
     portENTER_CRITICAL(&_mux);
     if (!_enabled ||
         ((_dir != STOPPED || _pending != STOPPED) &&
-         millis() - _lastCommandTime >= _timeout)) {
+         millis() - _lastCommandTime >= _lease)) {
       stopLocked(); portEXIT_CRITICAL(&_mux); return;
     }
     if (_pending != STOPPED && millis() - _switchTime >= 5) {
@@ -79,6 +85,7 @@ private:
   Direction _dir = STOPPED, _pending = STOPPED;
   uint32_t _lastCommandTime = 0, _switchTime = 0;
   uint32_t _timeout = 2000;
+  uint32_t _lease = 2000;
   bool _enabled = false, _leftReverse = false, _rightReverse = false, _timerReady = false;
   esp_timer_handle_t _watchdog = nullptr;
   mutable portMUX_TYPE _mux = portMUX_INITIALIZER_UNLOCKED;
@@ -89,10 +96,11 @@ private:
     writePin(PIN_A1A, false); writePin(PIN_A1B, false);
     writePin(PIN_B1A, false); writePin(PIN_B1B, false);
   }
-  bool request(Direction next) {
+  bool request(Direction next, uint32_t lease = 0) {
     portENTER_CRITICAL(&_mux);
     if (!_enabled || !_timerReady) { portEXIT_CRITICAL(&_mux); return false; }
     _lastCommandTime = millis();
+    _lease = lease ? min(lease, _timeout) : _timeout;
     if (next == _dir || next == _pending) { portEXIT_CRITICAL(&_mux); return true; }
     outputsLow(); _dir = STOPPED; _pending = next; _switchTime = millis();
     portEXIT_CRITICAL(&_mux);

@@ -93,9 +93,13 @@ enum InstrumentTimbre {
 
 struct Note {
   uint16_t freq;  // ความถี่เสียง เช่น NOTE_C5, REST
-  float beats;    // ความยาวจังหวะ (เช่น N_QUARTER, N_EIGHTH)
+  uint8_t ticks;  // Quarter-beat ticks: all existing rhythms are lossless.
   uint8_t dyn;    // ไดนามิก (DYN_AUTO, DYN_P, DYN_MF, DYN_F)
+  constexpr Note(uint16_t frequency = 0, float beats = 0, uint8_t dynamic = DYN_AUTO)
+    : freq(frequency), ticks(static_cast<uint8_t>(beats * 4)), dyn(dynamic) {}
 };
+static_assert(sizeof(Note) == 4, "Scores must remain four bytes per note");
+static_assert(Note(NOTE_C5, N_DOTTED_EIGHTH, DYN_F).ticks == 3, "Preserve dotted rhythms");
 
 struct SongItem {
   const char* id;          // Machine ID สำหรับเรียกผ่าน Web API
@@ -564,8 +568,8 @@ private:
     _currentFreq = note.freq;
 
     // คำนวณความยาวเวลาจาก BPM (1 Beat = 60000 / BPM ms)
-    float oneBeatMs = 60000.0f / ((float)_song->bpm * robotSettings.get(AUDIO_TEMPO) / 100.0f);
-    float totalNoteMs = note.beats * oneBeatMs;
+    uint32_t totalNoteMs = (1500000UL * note.ticks) /
+      (static_cast<uint32_t>(_song->bpm) * robotSettings.get(AUDIO_TEMPO));
 
     if (note.freq == REST) {
       _currentSoundMs = 0;
@@ -579,8 +583,8 @@ private:
     // คำนวณความดังเริ่มต้น (Dynamic Velocity)
     uint8_t dyn = note.dyn;
     if (dyn == DYN_AUTO) {
-      if (note.beats >= 2.0f)      dyn = DYN_F;  // โน้ตยาว / ท้ายประโยค = ก้องกังวาน (Forte)
-      else if (note.beats >= 1.0f) dyn = DYN_MF; // ตัวดำ = ชัดเจน (Mezzo-forte)
+      if (note.ticks >= 8)      dyn = DYN_F;  // โน้ตยาว / ท้ายประโยค = ก้องกังวาน (Forte)
+      else if (note.ticks >= 4) dyn = DYN_MF; // ตัวดำ = ชัดเจน (Mezzo-forte)
       else                         dyn = DYN_MP; // โน้ตสั้น = นุ่มนวล (Mezzo-piano)
     }
 

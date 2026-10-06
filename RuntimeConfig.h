@@ -50,7 +50,16 @@
  X(PROX_CLOSE,"proximity_close_cm","ระยะใกล้เกินไป","behavior",5,100,18,"cm","โหมด Interactive แสดงตกใจในช่วงนี้") \
  X(PROX_GREETING,"proximity_greeting_cm","ระยะทักทายสูงสุด","behavior",10,200,45,"cm","ต้องมากกว่าระยะใกล้เกินไป") \
  X(PROX_COOLDOWN,"proximity_cooldown_ms","พักระหว่างการทักทาย","behavior",500,10000,1500,"ms","ลดการขยับและเล่นเสียงซ้ำ") \
- X(TELEMETRY_INTERVAL,"telemetry_interval_ms","รอบข้อมูลหน้าเว็บ","system",250,5000,500,"ms","เรียกครั้งถัดไปเมื่อครั้งก่อนเสร็จ หยุดเมื่อซ่อนแท็บ")
+ X(TELEMETRY_INTERVAL,"telemetry_interval_ms","รอบข้อมูลหน้าเว็บ","system",250,5000,500,"ms","เรียกครั้งถัดไปเมื่อครั้งก่อนเสร็จ หยุดเมื่อซ่อนแท็บ") \
+ X(AUTO_STOP,"auto_stop_cm","ระยะหยุดอัตโนมัติ","autonomy",15,100,25,"cm","หยุดทันทีเมื่อใกล้กว่าหรือเท่าค่านี้ ห้ามถอยอัตโนมัติ") \
+ X(AUTO_CLEAR,"auto_clear_cm","ระยะโล่งสำหรับเดิน","autonomy",30,250,60,"cm","ต้องมากกว่าระยะหยุด ใช้กับโหมดเดินเอง") \
+ X(FOLLOW_DISTANCE,"follow_distance_cm","ระยะตามเป้าหมาย","autonomy",30,150,65,"cm","เดินเป็นช่วงเมื่อไกลกว่านี้อีก 5 cm หยุดเมื่อใกล้พอ") \
+ X(FOLLOW_MAX,"follow_max_cm","ระยะติดตามสูงสุด","autonomy",60,300,180,"cm","เกินระยะนี้จะปลดเป้าหมาย ต้องยืนยันใหม่") \
+ X(TARGET_DELTA,"target_delta_cm","การเปลี่ยนระยะขั้นต่ำ","autonomy",3,40,8,"cm","ระยะเปลี่ยนขณะหุ่นอยู่นิ่ง = ผู้สมัครเป้าหมายเคลื่อนที่ ไม่ยืนยันว่าเป็นคน") \
+ X(AUTO_PULSE,"auto_pulse_ms","เวลาเดินแต่ละช่วง","autonomy",60,300,120,"ms","ตัดมอเตอร์ด้วย timer อิสระ ไม่เพิ่มเวลาแม้หน้าเว็บค้าง") \
+ X(AUTO_OBSERVE,"auto_observe_ms","เวลาหยุดดูเป้าหมาย","autonomy",300,3000,600,"ms","รออย่างน้อยค่านี้หรือ 3 รอบ ultrasonic หลังเคลื่อนที่") \
+ X(AUTO_TURN,"auto_turn_ms","เวลาเลี้ยวสแกนแต่ละช่วง","autonomy",60,250,100,"ms","หมุนตัวซ้ายเป็นช่วงเมื่อยังมีระยะหน้าเพียงพอ ไม่มีเซนเซอร์ด้านข้าง") \
+ X(AUTO_TURN_LIMIT,"auto_turn_limit","จำนวนเลี้ยวติดกันสูงสุด","autonomy",1,8,4,"times","หากยังติดสิ่งกีดขวางจะหยุดรอให้เลือกโหมดใหม่")
 
 enum ConfigField {
 #define CONFIG_ENUM(id, key, label, group, lo, hi, def, unit, hint) id,
@@ -92,6 +101,8 @@ struct RobotSettings {
     }
     if (get(SERVO_MIN_US_CFG) >= get(SERVO_MAX_US_CFG)) { error = "servo_min_us"; return false; }
     if (get(PROX_CLOSE) >= get(PROX_GREETING)) { error = "proximity_close_cm"; return false; }
+    if (get(AUTO_STOP) >= get(AUTO_CLEAR)) { error = "auto_clear_cm"; return false; }
+    if (get(FOLLOW_DISTANCE) <= get(AUTO_STOP) || get(FOLLOW_DISTANCE) + 5 >= get(FOLLOW_MAX)) { error = "follow_distance_cm"; return false; }
     error = nullptr; return true;
   }
   int servoAngle(ConfigField base, int logical) const {
@@ -125,20 +136,35 @@ public:
     if (!prefs.begin("robot-config", false)) { _status = "storage_unavailable"; return; }
     if (prefs.getBytesLength("settings") == 0) { prefs.end(); return; }
     Record record = {};
-    bool readOK = prefs.getBytesLength("settings") == sizeof(record) &&
-                  prefs.getBytes("settings", &record, sizeof(record)) == sizeof(record);
-    prefs.end();
+    const size_t length = prefs.getBytesLength("settings");
     const char* error = nullptr;
-    if (!readOK || record.magic != MAGIC || record.version != VERSION ||
-        record.checksum != checksum(record) || !record.settings.validate(error)) {
-      _status = "invalid_saved_config"; return;
+    bool ok = false;
+    if (length == sizeof(record)) {
+      ok = prefs.getBytes("settings", &record, sizeof(record)) == sizeof(record) &&
+        record.magic == MAGIC && record.version == VERSION &&
+        record.checksum == checksum(record) && record.settings.validate(error);
+    } else if (length == sizeof(LegacyRecord)) {
+      LegacyRecord old = {};
+      if (prefs.getBytes("settings", &old, sizeof(old)) == sizeof(old) &&
+          old.magic == MAGIC && old.version == 1 &&
+          old.checksum == crcBytes(&old, offsetof(LegacyRecord, checksum))) {
+        // Append-only schema: preserve all 42 previously saved values.
+        memcpy(record.settings.values, old.values, sizeof(old.values));
+        record.revision = old.revision;
+        ok = record.settings.validate(error);
+        _needsMigration = ok;
+      }
     }
+    prefs.end();
+    if (!ok) { _status = "invalid_saved_config"; return; }
     robotSettings = record.settings;
     _revision = record.revision;
-    _status = "saved";
+    _status = _needsMigration ? "migrated_v1" : "saved";
   }
   bool save(const RobotSettings& next, const char*& error) {
     if (!next.validate(error)) return false;
+    // Keep legacy data readable without an extra write on a no-op save. The
+    // API stops autonomous movement before any actual settings change/write.
     if (!memcmp(next.values, robotSettings.values, sizeof(next.values))) return true;
     if (_hasWritten && millis() - _lastWrite < 2000) { error = "save_too_soon"; return false; }
     Record record = {};
@@ -152,25 +178,30 @@ public:
     if (!ok) { error = "storage_write_failed"; return false; }
     robotSettings = next;
     _revision = record.revision; _status = "saved";
-    _hasWritten = true; _lastWrite = millis();
+    _needsMigration = false; _hasWritten = true; _lastWrite = millis();
     return true;
   }
 private:
   static constexpr uint32_t MAGIC = 0x52424346;
-  static constexpr uint32_t VERSION = 1;
+  static constexpr uint32_t VERSION = 2;
+  struct LegacyRecord { uint32_t magic, version, revision; int32_t values[42]; uint32_t checksum; };
+  static_assert(TELEMETRY_INTERVAL == 41, "Do not reorder persisted v1 fields");
   struct Record {
     uint32_t magic, version, revision;
     RobotSettings settings;
     uint32_t checksum;
   };
   uint32_t _revision = 0, _lastWrite = 0;
-  bool _hasWritten = false;
+  bool _hasWritten = false, _needsMigration = false;
   const char* _status = "defaults";
   static uint32_t checksum(const Record& record) {
+    return crcBytes(&record, offsetof(Record, checksum));
+  }
+  static uint32_t crcBytes(const void* data, size_t length) {
     // CRC32 over a versioned, fixed-width record; no heap allocations.
     uint32_t crc = 0xFFFFFFFF;
-    const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&record);
-    for (size_t i = 0; i < offsetof(Record, checksum); ++i) {
+    const uint8_t* bytes = reinterpret_cast<const uint8_t*>(data);
+    for (size_t i = 0; i < length; ++i) {
       crc ^= bytes[i];
       for (int bit = 0; bit < 8; ++bit) crc = (crc >> 1) ^ (0xEDB88320 & (0U - (crc & 1)));
     }

@@ -7,10 +7,13 @@
 #include "MotionSystem.h"
 #include "MotorController.h"
 #include "SensorManager.h"
+#include "DecisionTree.h"
 
 // ============================================================================
 // RECREATION ENGINE (Coordinates Entertainment Modes & Companion Interactions)
 // ============================================================================
+enum InteractiveBehavior { INTERACT_GREET, INTERACT_ROAM, INTERACT_FOLLOW };
+
 enum RecreationMode {
   MODE_MANUAL = 0,        // Direct Web Control
   MODE_PARTY_BEAT = 1,    // Sound-Reactive Dancing (Clap/Music follower)
@@ -39,6 +42,11 @@ public:
   void setMode(RecreationMode mode, bool center = true) {
     _motor.stop();
     _motion.freeze();
+    _song.stop();
+    _interactive = INTERACT_GREET; _targetConfirmed = false;
+    _window.clear(); _pulseActive = false; _turns = 0;
+    _target = TargetClass::NO_DATA; _reason = "inactive";
+    _sequence = _sensor.distanceSequence(); _observeAfter = millis();
     _mode = mode;
     _showcaseActive = false;
 
@@ -54,8 +62,34 @@ public:
       _song.playById("sfx_happy");
     } else if (_mode == MODE_INTERACTIVE) {
       _face.setFace("normal");
-      _song.playById("sfx_beep");
+      _song.toneBeep(660, 100);
     }
+  }
+
+  bool setInteractive(InteractiveBehavior behavior) {
+    if (!robotSettings.get(SONAR_ENABLED) ||
+        (behavior != INTERACT_GREET && (!robotSettings.get(MOTOR_ENABLED) || !_motor.ready()))) return false;
+    setMode(MODE_INTERACTIVE);
+    _interactive = behavior; _reason = "collecting";
+    return true;
+  }
+  bool confirmTarget() {
+    // Explicit human confirmation is required; distance cannot identify people.
+    if (_mode != MODE_INTERACTIVE || _interactive != INTERACT_FOLLOW ||
+        _target != TargetClass::MOVING || !_sensor.distanceValid() ||
+        _sequence != _sensor.distanceSequence() || _sensor.distance() <= robotSettings.get(AUTO_STOP) ||
+        _sensor.distance() > robotSettings.get(FOLLOW_MAX)) return false;
+    _targetConfirmed = true; return true;
+  }
+  const char* interactiveString() const {
+    return _interactive == INTERACT_ROAM ? "roam" : _interactive == INTERACT_FOLLOW ? "follow" : "greet";
+  }
+  const char* decisionClass() const { return targetClassName(_target); }
+  const char* decisionReason() const { return _reason; }
+  bool targetConfirmed() const { return _targetConfirmed; }
+  bool canConfirmTarget() const {
+    return _mode == MODE_INTERACTIVE && _interactive == INTERACT_FOLLOW &&
+      !_targetConfirmed && _target == TargetClass::MOVING && _sensor.distanceValid();
   }
 
   RecreationMode mode() const { return _mode; }
@@ -72,6 +106,7 @@ public:
   // Start synchronized song & dance show
   bool startShowcase(const char* songId, const char* motionId) {
     _motor.stop();
+    _targetConfirmed = false; _pulseActive = false; _window.clear(); _reason = "inactive";
     _song.stop(); _motion.freeze();
     bool sOk = _song.playById(songId);
     bool mOk = _motion.playById(motionId, true); // Loop dance while song plays
@@ -129,6 +164,13 @@ private:
   bool _showcaseActive;
   unsigned long _lastProximityReaction;
   bool _partyRested = false;
+  InteractiveBehavior _interactive = INTERACT_GREET;
+  RangeWindow _window;
+  TargetClass _target = TargetClass::NO_DATA;
+  const char* _reason = "inactive";
+  bool _targetConfirmed = false, _pulseActive = false;
+  uint8_t _turns = 0;
+  uint32_t _sequence = 0, _observeAfter = 0, _pulseEnd = 0;
 
   void _updatePartyMode() {
     unsigned long now = millis();
@@ -168,7 +210,61 @@ private:
     }
   }
 
+  void _invalidate(const char* reason, TargetClass target) {
+    _motor.stop(); _pulseActive = false; _targetConfirmed = false;
+    _window.clear(); _target = target; _reason = reason;
+  }
+  void _startPulse(MotorController::Direction direction, uint32_t duration, const char* reason) {
+    if (!_motor.pulse(direction, duration)) { _invalidate("hardware_disabled", TargetClass::NO_DATA); return; }
+    _pulseActive = true; _pulseEnd = millis() + duration;
+    _observeAfter = _pulseEnd + max(static_cast<uint32_t>(robotSettings.get(AUTO_OBSERVE)),
+                                  static_cast<uint32_t>(robotSettings.get(SONAR_INTERVAL)) * 3);
+    _window.clear(); _reason = reason;
+  }
   void _updateInteractiveMode() {
+    if (_interactive == INTERACT_GREET) { _reason = "greeting"; _updateGreeting(); return; }
+    uint32_t now = millis();
+    if (!robotSettings.get(MOTOR_ENABLED) || !robotSettings.get(SONAR_ENABLED) || !_motor.ready()) {
+      _invalidate("hardware_disabled", TargetClass::NO_DATA); return;
+    }
+    if (!_sensor.distanceValid()) { _invalidate("no_echo_stop", TargetClass::NO_DATA); return; }
+    int16_t cm = static_cast<int16_t>(_sensor.distance());
+    if (cm <= robotSettings.get(AUTO_STOP)) { _invalidate("too_close_stop", TargetClass::TOO_CLOSE); return; }
+    if (_interactive == INTERACT_FOLLOW && cm > robotSettings.get(FOLLOW_MAX)) {
+      _invalidate("target_lost", TargetClass::CLEAR); return;
+    }
+    if (_pulseActive) {
+      if (static_cast<int32_t>(now - _pulseEnd) < 0) return;
+      _motor.stop(); _pulseActive = false; _window.clear();
+    }
+    if (static_cast<int32_t>(now - _observeAfter) < 0) { _reason = "settling"; return; }
+    if (_sequence != _sensor.distanceSequence()) {
+      _sequence = _sensor.distanceSequence();
+      // Do not use a measurement completed before the stationary wait ended.
+      if (static_cast<int32_t>((now - _sensor.distanceAge()) - _observeAfter) >= 0) _window.add(cm);
+    }
+    auto evidence = _window.evidence(true, cm);
+    _target = decideTarget(evidence, robotSettings.get(AUTO_STOP), robotSettings.get(FOLLOW_MAX), robotSettings.get(TARGET_DELTA));
+    if (_target == TargetClass::COLLECTING) { _reason = "collecting"; return; }
+    if (_target == TargetClass::UNSTABLE) { _invalidate("ambiguous_stop", _target); return; }
+    if (_interactive == INTERACT_FOLLOW) {
+      if (_target == TargetClass::CLEAR) { _invalidate("target_lost", _target); return; }
+      if (!_targetConfirmed) { _reason = _target == TargetClass::MOVING ? "confirm_person" : "object_or_wall"; return; }
+      if (cm <= robotSettings.get(FOLLOW_DISTANCE) + 5) { _reason = "follow_hold"; return; }
+      _startPulse(MotorController::FORWARD, robotSettings.get(AUTO_PULSE), "follow_step");
+      return;
+    }
+    // Roaming uses front clearance only. Never back up without a rear sensor.
+    if (_target == TargetClass::MOVING) { _reason = "moving_object_wait"; return; }
+    if (cm >= robotSettings.get(AUTO_CLEAR)) {
+      _turns = 0; _startPulse(MotorController::FORWARD, robotSettings.get(AUTO_PULSE), "roam_step");
+    } else {
+      if (_turns >= robotSettings.get(AUTO_TURN_LIMIT)) { _reason = "turn_limit_stop"; return; }
+      ++_turns; _startPulse(MotorController::LEFT, robotSettings.get(AUTO_TURN), "scan_turn");
+    }
+  }
+
+  void _updateGreeting() {
     unsigned long now = millis();
     if (now - _lastProximityReaction < (uint32_t)robotSettings.get(PROX_COOLDOWN)) return;
     if (!_sensor.distanceValid()) return;
