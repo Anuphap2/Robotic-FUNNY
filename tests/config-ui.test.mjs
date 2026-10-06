@@ -87,3 +87,29 @@ test('closing an idle dashboard preserves autonomy; active manual driving sends 
     if(expectedStops){assert.equal(stops[0].options.keepalive,true);assert.equal(stops[0].options.body.get('cmd'),'stop');}
   }
 });
+test('Interactive starts with one mode command and has no behavior or target-confirmation controls',()=>{
+  assert.ok(!source.includes('id="interactiveChoice"'));
+  assert.ok(!source.includes('id="confirmTarget"'));
+  const controls={'startInteractive':{},'stopInteractive':{}};
+  const calls=[];
+  const clickSource=source.slice(source.indexOf("$('startInteractive').onclick="),source.indexOf("$('startShow').onclick="));
+  runInNewContext(clickSource,{$:id=>controls[id],act:(...args)=>calls.push(args)});
+  controls.startInteractive.onclick();
+  assert.equal(calls.length,1);assert.equal(calls[0][0],'mode');assert.equal(calls[0][1],'interactive');
+  controls.stopInteractive.onclick();
+  assert.equal(calls[1][0],'interactive');assert.equal(calls[1][1],'stop');
+});
+test('automatic telemetry renders changing behavior and target lock without a confirmation step',()=>{
+  const controls={interactiveState:{}};let rows;
+  const renderSource=source.slice(source.indexOf('const decisionLabels='),source.indexOf('function updateTelemetry(d)'));
+  const render=runInNewContext(renderSource+'; updateInteractive',{
+    $:id=>controls[id],facts:(id,values)=>rows=values
+  });
+  for(const behavior of ['roam','follow','greet','avoid','observe','stop']){
+    render({mode:'interactive',behavior,targetClass:'moving_target',decision:'follow_step',targetLocked:behavior==='follow',movingVotes:2});
+    assert.ok(controls.interactiveState.textContent.startsWith('อัตโนมัติ'));
+    assert.equal(rows.length,4);assert.ok(!rows.some(row=>row[0].includes('ยืนยัน')));
+    if(behavior==='follow')assert.ok(rows[2][1].startsWith('จับอัตโนมัติ'));
+  }
+  render({mode:'manual'});assert.equal(controls.interactiveState.textContent,'ยังไม่เริ่ม');
+});

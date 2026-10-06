@@ -10,7 +10,7 @@ const html = read('WebUI.h').split('R"rawliteral(')[1].split(')rawliteral"')[0];
 const schema = [...read('RuntimeConfig.h').matchAll(/X\(\w+,"([^"]+)","([^"]+)","([^"]+)",(-?\d+),(-?\d+),(-?\d+),"([^"]+)","([^"]+)"\)/g)]
   .map(([,key,label,group,min,max,def,unit,hint]) => ({key,label,group,min:+min,max:+max,default:+def,unit,hint}));
 if (schema.length !== 51 || new Set(schema.map(s=>s.key)).size !== 51) throw Error('Invalid schema fixture');
-const settings = {revision:0,version:'2.1.0',storage:'defaults',schemaVersion:2,
+const settings = {revision:0,version:'2.2.0',storage:'defaults',schemaVersion:2,
   values:Object.fromEntries(schema.map(s=>[s.key,s.default])), schema,
   pins:{'OLED SDA':21,'OLED SCL':22,'Ultrasonic TRIG':5,'Ultrasonic ECHO':17,'Buzzer':25,'Microphone AO':34,'Head servo':18,'Left arm servo':19,'Right arm servo':23,'Motor A1A':26,'Motor A1B':27,'Motor B1A':14,'Motor B1B':12},oledAddress:60};
 const catalog = {
@@ -18,7 +18,27 @@ const catalog = {
   faces:[...read('FaceSystem.h').split('const FaceItem FACE_REGISTRY[] = {')[1].split('};')[0].matchAll(/\{"([^"]+)",\s*"([^"]+)",\s*"([^"]+)"/g)].map(([,id,title,icon])=>({id,title,icon})),
   motions:[...read('MotionSystem.h').split('const MotionRoutine MOTION_REGISTRY[] = {')[1].split('};')[0].matchAll(/\{"([^"]+)",\s*"([^"]+)",\s*"([^"]+)"/g)].map(([,id,title,icon])=>({id,title,icon}))
 };
-let motor='stop',mode='manual',playing=false,timbre='music_box',interactive='greet',confirmed=false;
+let motor='stop',mode='manual',playing=false,timbre='music_box',automaticStarted=0;
+// Timed UI scenarios only: no production classifier or motor is simulated here.
+function automaticView(){
+  const idle={interactive:'auto',behavior:'observe',targetClass:'no_data',decision:'inactive',targetLocked:false,movingVotes:0,dist:100,distanceValid:true,dir:motor};
+  if(mode!=='interactive')return idle;
+  const stages=[
+    {behavior:'observe',targetClass:'collecting',decision:'collecting'},
+    {behavior:'roam',targetClass:'clear',decision:'roam_step',dist:220,dir:'forward'},
+    {behavior:'observe',targetClass:'moving_target',decision:'checking_movement',dist:100,movingVotes:1},
+    {behavior:'follow',targetClass:'moving_target',decision:'follow_step',dist:100,targetLocked:true,movingVotes:2,dir:'forward'},
+    {behavior:'follow',targetClass:'static_object',decision:'follow_hold',dist:70,targetLocked:true},
+    {behavior:'greet',targetClass:'static_object',decision:'greeting',dist:40,targetLocked:true},
+    {behavior:'stop',targetClass:'clear',decision:'target_lost',dist:250},
+    {behavior:'observe',targetClass:'collecting',decision:'collecting'},
+    {behavior:'avoid',targetClass:'static_object',decision:'scan_turn',dist:50,dir:'left'},
+    {behavior:'stop',targetClass:'static_object',decision:'turn_limit_stop',dist:50},
+    {behavior:'roam',targetClass:'clear',decision:'roam_step',dist:220,dir:'forward'},
+    {behavior:'stop',targetClass:'no_data',decision:'no_echo_stop',dist:-1,distanceValid:false}
+  ];
+  return {...idle,...stages[Math.floor((Date.now()-automaticStarted)/1800)%stages.length]};
+}
 const actions=[];
 createServer(async (req,res)=>{
   const url=new URL(req.url,'http://127.0.0.1');
@@ -29,7 +49,7 @@ createServer(async (req,res)=>{
     res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});
     res.end(`<html><body style="margin:0;background:#253149"><iframe title="Robot preview ${width}px" src="/" style="width:${width}px;height:100vh;border:0;display:block;margin:auto"></iframe></body></html>`);return;
   }
-  if(url.pathname==='/telemetry')return send(200,{vol:42,peak:118,dist:32.5,distanceValid:true,distanceAgeMs:22,baseline:2048,calibrating:false,interactive,targetClass:interactive==='follow'?'moving_target':interactive==='roam'?'static_object':'no_data',decision:interactive==='follow'?(confirmed?'follow_hold':'confirm_person'):interactive==='roam'?'scan_turn':'greeting',targetConfirmed:confirmed,canConfirm:mode==='interactive'&&interactive==='follow'&&!confirmed,mode,dir:motor,face:'normal',timbre,isPlaying:playing,heapFree:178240,heapMin:161300,heapLargest:145800,uptimeMs:1234567,maxLoopUs:13300,oledReady:true,servoReady:true,audioReady:true,motorReady:true,rssi:-55,networkMode:'station',ip:'192.168.1.42',version:'2.1.0',revision:settings.revision,pollMs:settings.values.telemetry_interval_ms});
+  if(url.pathname==='/telemetry')return send(200,{vol:42,peak:118,distanceAgeMs:22,baseline:2048,calibrating:false,...automaticView(),mode,face:'normal',timbre,isPlaying:playing,heapFree:178240,heapMin:161300,heapLargest:145800,uptimeMs:1234567,maxLoopUs:13300,oledReady:true,servoReady:true,audioReady:true,motorReady:true,rssi:-55,networkMode:'station',ip:'192.168.1.42',version:'2.2.0',revision:settings.revision,pollMs:settings.values.telemetry_interval_ms});
   if(url.pathname==='/api/catalog')return send(200,catalog);
   if(url.pathname==='/api/config'&&req.method==='GET')return send(200,settings);
   if(req.method==='POST'){
@@ -48,8 +68,8 @@ createServer(async (req,res)=>{
     if(url.pathname==='/action'){
       const action=Object.fromEntries(args);actions.push(action);
       if(action.type==='motor'){mode='manual';motor=action.cmd;}
-      if(action.type==='mode'){mode=action.cmd;interactive='greet';confirmed=false;}
-      if(action.type==='interactive'){if(action.cmd==='confirm')confirmed=true;else{mode='interactive';interactive=action.cmd;confirmed=false;motor='stop';}}
+      if(action.type==='mode'){mode=action.cmd;motor='stop';if(mode==='interactive')automaticStarted=Date.now();}
+      if(action.type==='interactive'){motor='stop';if(action.cmd==='stop'){mode='manual';playing=false;}else if(['start','greet','roam','follow'].includes(action.cmd)){mode='interactive';automaticStarted=Date.now();}else return send(422,{error:'unknown_command_or_hardware_disabled'});}
       if(action.type==='song')playing=action.cmd!=='stop';
       if(action.type==='showcase'){mode='showcase';playing=true;}
       if(action.type==='timbre')timbre=action.cmd;

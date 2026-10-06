@@ -13,7 +13,7 @@
 
 RobotSettings robotSettings;
 ConfigStore configStore;
-const char* const FIRMWARE_VERSION = "2.1.0";
+const char* const FIRMWARE_VERSION = "2.2.0";
 uint32_t maxLoopUs = 0;
 #include "SongSystem.h"
 #include "FaceSystem.h"
@@ -73,7 +73,7 @@ void handleTelemetry() {
     "\"baseline\":%d,\"calibrating\":%s,\"mode\":\"%s\",\"dir\":\"%s\",\"face\":\"%s\","
     "\"timbre\":\"%s\",\"isPlaying\":%s,\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargest\":%lu,"
     "\"uptimeMs\":%lu,\"maxLoopUs\":%lu,\"oledReady\":%s,\"servoReady\":%s,\"audioReady\":%s,\"motorReady\":%s,"
-    "\"rssi\":%d,\"networkMode\":\"%s\",\"ip\":\"%s\",\"version\":\"%s\",\"revision\":%lu,\"pollMs\":%ld,\"interactive\":\"%s\",\"targetClass\":\"%s\",\"decision\":\"%s\",\"targetConfirmed\":%s,\"canConfirm\":%s}",
+    "\"rssi\":%d,\"networkMode\":\"%s\",\"ip\":\"%s\",\"version\":\"%s\",\"revision\":%lu,\"pollMs\":%ld,\"interactive\":\"%s\",\"targetClass\":\"%s\",\"decision\":\"%s\",\"behavior\":\"%s\",\"targetLocked\":%s,\"movingVotes\":%u}",
     sensorManager.volume(), sensorManager.peakVolume(), sensorManager.distance(),
     sensorManager.distanceValid() ? "true" : "false", (unsigned long)sensorManager.distanceAge(),
     sensorManager.baseline(), sensorManager.calibrating() ? "true" : "false",
@@ -89,7 +89,8 @@ void handleTelemetry() {
     (WiFi.status() == WL_CONNECTED ? WiFi.localIP() : WiFi.softAPIP()).toString().c_str(),
     FIRMWARE_VERSION, (unsigned long)configStore.revision(), (long)robotSettings.get(TELEMETRY_INTERVAL),
     recreationEngine.interactiveString(), recreationEngine.decisionClass(), recreationEngine.decisionReason(),
-    recreationEngine.targetConfirmed() ? "true" : "false", recreationEngine.canConfirmTarget() ? "true" : "false");
+    recreationEngine.behaviorString(), recreationEngine.targetLocked() ? "true" : "false",
+    static_cast<unsigned int>(recreationEngine.movingVotes()));
   if (length < 0 || static_cast<size_t>(length) >= sizeof(json)) { sendError(500, "telemetry_too_large"); return; }
   server.sendHeader("Cache-Control", "no-store");
   server.send(200, "application/json", json);
@@ -223,15 +224,11 @@ void handleAction() {
   else if (type == "mode") {
     if (cmd == "manual") { recreationEngine.setMode(MODE_MANUAL); ok = true; }
     else if (cmd == "party" && robotSettings.get(MIC_ENABLED) && robotSettings.get(SERVO_ENABLED)) { recreationEngine.setMode(MODE_PARTY_BEAT); ok = true; }
-    else if (cmd == "interactive" && robotSettings.get(SONAR_ENABLED)) { recreationEngine.setMode(MODE_INTERACTIVE); ok = true; }
+    else if (cmd == "interactive") ok = recreationEngine.startInteractive();
   } else if (type == "interactive") {
-    if (cmd == "greet") ok = recreationEngine.setInteractive(INTERACT_GREET);
-    else if (cmd == "roam") ok = recreationEngine.setInteractive(INTERACT_ROAM);
-    else if (cmd == "follow") ok = recreationEngine.setInteractive(INTERACT_FOLLOW);
-    else if (cmd == "confirm") {
-      ok = recreationEngine.confirmTarget();
-      if (!ok) { sendError(409, "target_not_confirmable"); return; }
-    }
+    // Old start commands are aliases for the unified automatic mode.
+    if (cmd == "start" || cmd == "greet" || cmd == "roam" || cmd == "follow") ok = recreationEngine.startInteractive();
+    else if (cmd == "stop") { stopAll(); ok = true; }
   } else if (type == "showcase") {
     String motion = server.hasArg("motion") ? server.arg("motion") : "dance";
     if (motion.length() <= 64) ok = recreationEngine.startShowcase(cmd.c_str(), motion.c_str());
