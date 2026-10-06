@@ -30,8 +30,7 @@ public:
     _mode(MODE_MANUAL),
     _partyStep(0),
     _lastPartyMove(0),
-    _showcaseActive(false),
-    _lastProximityReaction(0) {}
+    _showcaseActive(false) {}
 
   void begin() {
     _mode = MODE_MANUAL;
@@ -41,11 +40,12 @@ public:
     _motor.stop();
     _motion.freeze();
     _song.stop();
-    _targetLocked = false; _moving.clear(); _greetedNearby = false;
+    _targetLocked = false; _moving.clear(); _encounter.reset();
     _window.clear(); _cruise.stop(); _pulseActive = false; _turns = 0;
     _retry.reset(); _heldFarReadings = 0;
     _target = TargetClass::NO_DATA; _reason = "inactive";
     _sequence = _sensor.distanceSequence(); _observeAfter = millis();
+    _encounterSequence = _sequence;
     _behavior = "observe";
     _mode = mode;
     _showcaseActive = false;
@@ -149,19 +149,20 @@ private:
   int _partyStep;
   unsigned long _lastPartyMove;
   bool _showcaseActive;
-  unsigned long _lastProximityReaction;
   bool _partyRested = false;
   RangeWindow _window;
   MovingEvidence _moving;
   CruiseController _cruise;
   ScanRetry _retry;
+  EncounterControl _encounter;
   TargetClass _target = TargetClass::NO_DATA;
   const char* _reason = "inactive";
   const char* _behavior = "observe";
-  bool _targetLocked = false, _pulseActive = false, _greetedNearby = false;
+  bool _targetLocked = false, _pulseActive = false;
   uint8_t _turns = 0;
   uint8_t _heldFarReadings = 0;
   uint32_t _sequence = 0, _observeAfter = 0, _pulseEnd = 0;
+  uint32_t _encounterSequence = 0;
 
   void _updatePartyMode() {
     unsigned long now = millis();
@@ -211,6 +212,7 @@ private:
   }
   void _beginObservation(uint32_t now) {
     _motor.stop(); _cruise.stop(); _pulseActive = false;
+    _encounter.clearHold();
     _window.clear(); _moving.clear();
     _sequence = _sensor.distanceSequence(); _observeAfter = now + _settleDuration();
   }
@@ -239,15 +241,30 @@ private:
   }
   void _updateInteractiveMode() {
     uint32_t now = millis();
+    bool usable = _sensor.distanceValid() && autonomousRangeFresh(_sensor.distanceAge(),
+      robotSettings.get(SONAR_INTERVAL), _driveLease());
+    int16_t cm = usable ? static_cast<int16_t>(_sensor.distance()) : -1;
+    bool encounterFresh = _encounterSequence != _sensor.distanceSequence();
+    if (encounterFresh) _encounterSequence = _sensor.distanceSequence();
+    int16_t pathClear = encounterClearCm(roamStartCm(robotSettings.get(AUTO_STOP), robotSettings.get(AUTO_CLEAR)),
+      robotSettings.get(PROX_GREETING), robotSettings.get(FOLLOW_DISTANCE));
+    bool departureAllowed = !_pulseActive && !_motion.isMoving() &&
+      (_motor.direction() == MotorController::STOPPED || _cruise.mode() == CruiseMode::ROAM);
+    _encounter.observeDeparture(now, encounterFresh, usable, departureAllowed, cm >= pathClear,
+      robotSettings.get(PROX_COOLDOWN));
+    // Finish exactly once, even if sonar is temporarily missing or the servo
+    // routine never completes. The safety gates below still control all wheels.
+    if (_encounter.finishGreeting(now, _motion.isMoving())) {
+      _motion.toCenter(); _song.stop(); _targetLocked = false;
+      _heldFarReadings = 0; _turns = 0; _retry.clearWait();
+      _beginObservation(now); _behavior = "avoid"; _reason = "greeting_done";
+    }
     if (!robotSettings.get(MOTOR_ENABLED) || !robotSettings.get(SONAR_ENABLED) || !_motor.ready()) {
       _invalidate("hardware_disabled", TargetClass::NO_DATA); return;
     }
-    if (!_sensor.distanceValid() || !autonomousRangeFresh(_sensor.distanceAge(),
-        robotSettings.get(SONAR_INTERVAL), _driveLease())) {
+    if (!usable) {
       _invalidate("no_echo_stop", TargetClass::NO_DATA); return;
     }
-    int16_t cm = static_cast<int16_t>(_sensor.distance());
-    if (cm > robotSettings.get(PROX_GREETING) + 10) _greetedNearby = false;
     if (cm <= robotSettings.get(AUTO_STOP)) {
       _invalidate("too_close_stop", TargetClass::TOO_CLOSE);
       _updateGreeting(true); return;
@@ -288,7 +305,10 @@ private:
       if (static_cast<int32_t>(now - _pulseEnd) < 0) return;
       _motor.stop(); _pulseActive = false; _window.clear();
     }
-    if (static_cast<int32_t>(now - _observeAfter) < 0) { _reason = "settling"; _behavior = "observe"; return; }
+    if (static_cast<int32_t>(now - _observeAfter) < 0) {
+      _reason = _encounter.seekingPath() ? "post_greeting_scan" : "settling";
+      _behavior = "observe"; return;
+    }
     if (_motion.isMoving()) {
       _sequence = _sensor.distanceSequence(); _observeAfter = now + _settleDuration();
       _reason = "greeting"; _behavior = "greet"; return;
@@ -302,31 +322,37 @@ private:
     auto evidence = _window.evidence(true, cm);
     _target = decideTarget(evidence, robotSettings.get(AUTO_STOP), robotSettings.get(FOLLOW_MAX), robotSettings.get(TARGET_DELTA));
     if (fresh) _moving.add(_target, evidence.deltaCm);
-    bool greetingDue = !_greetedNearby && cm <= robotSettings.get(PROX_GREETING) &&
-      now - _lastProximityReaction >= static_cast<uint32_t>(robotSettings.get(PROX_COOLDOWN));
+    bool greetingDue = _encounter.canGreet(now, robotSettings.get(PROX_COOLDOWN)) && cm <= robotSettings.get(PROX_GREETING);
     auto action = decideAutomatic({_target, _targetLocked, _moving.votes(), cm, greetingDue,
-      _turns, static_cast<uint8_t>(robotSettings.get(AUTO_TURN_LIMIT))},
-      robotSettings.get(FOLLOW_DISTANCE), roamStartCm(robotSettings.get(AUTO_STOP), robotSettings.get(AUTO_CLEAR)));
+      _turns, static_cast<uint8_t>(robotSettings.get(AUTO_TURN_LIMIT)), _encounter.seekingPath()},
+      robotSettings.get(FOLLOW_DISTANCE), _encounter.seekingPath() ? pathClear :
+        roamStartCm(robotSettings.get(AUTO_STOP), robotSettings.get(AUTO_CLEAR)));
     switch (action) {
       case AutoAction::STOP:
         _invalidate("ambiguous_stop", _target); return;
       case AutoAction::WAIT:
         _behavior = "observe";
-        _reason = _target == TargetClass::MOVING ? "checking_movement" : "collecting"; return;
+        _reason = _encounter.seekingPath() ? "post_greeting_scan" :
+          _target == TargetClass::MOVING ? "checking_movement" : "collecting"; return;
       case AutoAction::RELEASE:
         _invalidate("target_lost", _target); return;
       case AutoAction::ACQUIRE:
         // This is an automatic range target lock, never a claim of human identity.
-        _targetLocked = true; _turns = 0; _retry.clearWait();
+        _targetLocked = true; _turns = 0; _retry.clearWait(); _encounter.clearHold();
         _behavior = "follow"; _reason = "target_acquired";
         _face.setTemporaryFace("happy", 800); return;
       case AutoAction::FOLLOW:
         _startCruise(CruiseMode::FOLLOW, now, cm); return;
       case AutoAction::HOLD:
         _behavior = "follow"; _reason = "follow_hold";
-        if (greetingDue) _updateGreeting(false); return;
+        if (greetingDue && _updateGreeting(false)) return;
+        if (_encounter.holdExpired(now, fresh)) {
+          _targetLocked = false; _turns = 0; _retry.clearWait();
+          _beginObservation(now); _behavior = "avoid"; _reason = "target_idle_escape";
+        }
+        return;
       case AutoAction::ROAM:
-        _turns = 0; _retry.clearWait();
+        _turns = 0; _retry.clearWait(); _encounter.pathOpened();
         _startCruise(CruiseMode::ROAM, now, cm); return;
       case AutoAction::TURN:
         _behavior = "avoid"; ++_turns;
@@ -345,25 +371,27 @@ private:
     }
   }
 
-  void _updateGreeting(bool tooClose) {
+  bool _updateGreeting(bool tooClose) {
     unsigned long now = millis();
-    if (now - _lastProximityReaction < (uint32_t)robotSettings.get(PROX_COOLDOWN)) return;
-    if (!_sensor.distanceValid() || _greetedNearby) return;
+    if (!_sensor.distanceValid() || !_encounter.canGreet(now, robotSettings.get(PROX_COOLDOWN))) return false;
 
     float dist = _sensor.distance();
     if (tooClose || (dist > 0.0f && dist < robotSettings.get(PROX_CLOSE))) {
       // Too close! Playful surprise reaction
-      _lastProximityReaction = now; _greetedNearby = true;
+      _beginObservation(now); _encounter.greet(now); _behavior = "greet"; _reason = "greeting";
       _face.setTemporaryFace("surprise", 1600);
       _song.playById("sfx_alarm");
       _motion.playById("head_shake");
+      return true;
     } else if (dist >= robotSettings.get(PROX_CLOSE) && dist <= robotSettings.get(PROX_GREETING)) {
       // Friendly greeting zone!
-      _lastProximityReaction = now; _greetedNearby = true;
+      _beginObservation(now); _encounter.greet(now); _behavior = "greet"; _reason = "greeting";
       _face.setTemporaryFace("happy", 1800);
       _song.playById("sfx_happy");
       _motion.playById("wave");
+      return true;
     }
+    return false;
   }
 };
 

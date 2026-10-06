@@ -10,7 +10,7 @@ const html = read('WebUI.h').split('R"rawliteral(')[1].split(')rawliteral"')[0];
 const schema = [...read('RuntimeConfig.h').matchAll(/X\(\w+,"([^"]+)","([^"]+)","([^"]+)",(-?\d+),(-?\d+),(-?\d+),"([^"]+)","([^"]+)"\)/g)]
   .map(([,key,label,group,min,max,def,unit,hint]) => ({key,label,group,min:+min,max:+max,default:+def,unit,hint}));
 if (schema.length !== 51 || new Set(schema.map(s=>s.key)).size !== 51) throw Error('Invalid schema fixture');
-const settings = {revision:0,version:'2.3.0',storage:'defaults',schemaVersion:2,
+const settings = {revision:0,version:'2.3.1',storage:'defaults',schemaVersion:2,
   values:Object.fromEntries(schema.map(s=>[s.key,s.default])), schema,
   pins:{'OLED SDA':21,'OLED SCL':22,'Ultrasonic TRIG':5,'Ultrasonic ECHO':17,'Buzzer':25,'Microphone AO':34,'Head servo':18,'Left arm servo':19,'Right arm servo':23,'Motor A1A':26,'Motor A1B':27,'Motor B1A':14,'Motor B1B':12},oledAddress:60};
 const catalog = {
@@ -30,7 +30,7 @@ function automaticView(){
     {behavior:'follow',targetClass:'moving_target',decision:'follow_cruise',dist:100,targetLocked:true,movingVotes:2,dir:'forward'},
     {behavior:'follow',targetClass:'static_object',decision:'follow_hold',dist:70,targetLocked:true},
     {behavior:'greet',targetClass:'static_object',decision:'greeting',dist:40,targetLocked:true},
-    {behavior:'stop',targetClass:'clear',decision:'target_lost',dist:250},
+    {behavior:'avoid',targetClass:'static_object',decision:'post_greeting_scan',dist:40},
     {behavior:'observe',targetClass:'collecting',decision:'collecting'},
     {behavior:'avoid',targetClass:'static_object',decision:'scan_turn',dist:50,dir:'left'},
     {behavior:'avoid',targetClass:'static_object',decision:'avoid_retry',dist:50},
@@ -49,7 +49,7 @@ createServer(async (req,res)=>{
     res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});
     res.end(`<html><body style="margin:0;background:#253149"><iframe title="Robot preview ${width}px" src="/" style="width:${width}px;height:100vh;border:0;display:block;margin:auto"></iframe></body></html>`);return;
   }
-  if(url.pathname==='/telemetry')return send(200,{vol:42,peak:118,distanceAgeMs:22,baseline:2048,calibrating:false,...automaticView(),mode,face:'normal',timbre,isPlaying:playing,heapFree:178240,heapMin:161300,heapLargest:145800,uptimeMs:1234567,maxLoopUs:13300,oledReady:true,servoReady:true,audioReady:true,motorReady:true,rssi:-55,networkMode:'station',ip:'192.168.1.42',version:'2.3.0',revision:settings.revision,pollMs:settings.values.telemetry_interval_ms});
+  if(url.pathname==='/telemetry')return send(200,{vol:42,peak:118,distanceAgeMs:22,baseline:2048,calibrating:false,...automaticView(),mode,face:'normal',timbre,isPlaying:playing,heapFree:178240,heapMin:161300,heapLargest:145800,uptimeMs:1234567,maxLoopUs:13300,oledReady:true,servoReady:true,audioReady:true,motorReady:true,rssi:-55,networkMode:'station',ip:'192.168.1.42',version:'2.3.1',revision:settings.revision,pollMs:settings.values.telemetry_interval_ms});
   if(url.pathname==='/api/catalog')return send(200,catalog);
   if(url.pathname==='/api/config'&&req.method==='GET')return send(200,settings);
   if(req.method==='POST'){

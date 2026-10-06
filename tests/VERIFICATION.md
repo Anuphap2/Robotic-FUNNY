@@ -1,4 +1,4 @@
-# Verification — firmware 2.3.0
+# Verification — firmware 2.3.1
 
 Checked on 7 October 2026 (Asia/Bangkok). No firmware was uploaded and no
 physical robot was driven during these checks.
@@ -10,14 +10,15 @@ Final source compiled successfully with `--warnings all`, FQBN
 The final build copy matches all changed production sources (excluding the
 `#line` markers inserted by Arduino).
 
-- Program storage: 1,080,874 / 1,310,720 bytes (82%).
-- Static RAM: 52,768 / 327,680 bytes (16%); 274,912 bytes remain before runtime
-  allocations. This is not a measurement of the running board's heap.
-- Static RAM increased by 32 bytes from 2.2.0. Cruise/filter/retry storage is fixed
-  capacity, with no additional song buffers or unbounded history.
-- Full initial build reported existing ESP32Servo unused-variable warnings;
-  final incremental build completed without diagnostics from project sources.
-- All 39 production assertions also passed an independent syntax-only compile
+- Program storage: 1,082,798 / 1,310,720 bytes (82%).
+- Static RAM: 52,784 / 327,680 bytes (16%); 274,896 bytes remain before runtime
+  allocations. This is not a measurement of running-board heap. Static RAM
+  increased by 16 bytes from 2.3.0.
+- Encounter, cruise, filter and retry storage is fixed capacity, with no
+  additional song buffers or unbounded history.
+- Build reported existing ESP32Servo unused-variable warnings; no diagnostics
+  were reported from project sources.
+- All 52 production assertions also passed an independent syntax-only compile
   with the ESP32 C++ compiler.
 - `Config.h` matches original commit `0192c93`; GPIO assignments are unchanged.
 - `SongSystem.h` matches `a20d12c`; 443 notes and all 19 tracks retain the earlier
@@ -25,7 +26,7 @@ The final build copy matches all changed production sources (excluding the
 
 ## Production movement and decision regressions
 
-The firmware contains 39 static assertions executing its production functions.
+The firmware contains 52 static assertions executing its production functions.
 These checks compile away; they do not allocate runtime test buffers or tasks.
 
 `AutonomousDrive.h` verifies:
@@ -59,17 +60,36 @@ At the default 100 ms echo cadence it starts cruising four times and spends at
 least 85% of the trace walking. Moving samples never enter the stationary target
 window. This is an ideal software trace, not a measurement on a physical robot.
 
+## Greeting and encounter regressions
+
+Seven `EncounterControl.h` assertions execute the production encounter state:
+isolated far spikes and near/far jitter over 28 seconds cannot repeat greetings;
+continuous fresh departure and a ten-second minimum allow one new encounter;
+turning/following, no echo, repeated frames and a stalled loop cannot prove
+departure; gesture completion and a 2.5-second timeout request routing exactly
+once; holding a close target is finite; clocks may roll over safely.
+
+Six additional `DecisionTree.h` assertions verify that post-greeting movement
+does not reacquire the nearby target, routing requires clearance outside the
+encounter zone, and close/invalid data retain stop priority. The integrated
+production sequence greets -> finishes -> rejects near reacquisition -> turns
+-> finds a clear path -> resumes exploration without permitting another greeting.
+The engine keeps the encounter latch across invalid readings and preserves the
+new-path intent while collecting fresh stationary measurements.
+
 ## Dashboard and compatibility
 
-`node --test tests/config-ui.test.mjs`: 13 tests covering actual dashboard code:
+`node --test tests/config-ui.test.mjs`: 14 tests covering actual dashboard code:
 field bounds/types, servo/proximity/autonomy constraints, invalid/unknown/GPIO
 fields, blank inputs, v1 import preserving 42 old values, bounded v2 imports,
 one-command Interactive start, idle page closure, manual drive exit stop,
-automatic telemetry and the new continuous-drive/observation/avoidance labels.
+automatic telemetry and continuous-drive/observation/avoidance labels, plus
+post-greeting route finding with the target lock released.
 
 Dashboard JavaScript syntax and `git diff --check` passed.
 The 51 saved field keys, order, numeric bounds/defaults and NVS schema v2 remain
-compatible with 2.2.0. Labels/hints now explain the new timing semantics:
+compatible with 2.3.0. The greeting cooldown hint now explains encounter rearming.
+The preceding release's timing semantics are retained:
 `auto_pulse_ms` is a minimum forward lease, `auto_observe_ms` controls periodic
 observation cadence and avoidance retry cooldown, and `auto_turn_limit` bounds
 each scan batch. No saved configuration is erased or rewritten automatically.
@@ -85,7 +105,9 @@ distance, front-echo quality while moving, pulse/lease cutoff during HTTP stalls
 old ISR captures after a stall, sonar timeout/no echo, follow deadband and single
 far spikes, repeated far readings and reacquisition, periodic stationary scans,
 alternate-side avoidance, close-stop priority, manual override, emergency stop,
-greetings and sustained heap use. Existing NVS migration/persistence requires
+one greeting for a real person while the range jitters, no-echo interruptions,
+leaving and returning, route finding after a greeting, disabled/slow servos,
+near-target hold timeout, and sustained heap use. Existing NVS migration/persistence requires
 reboot checks. Defaults retain a 100 ms sonar interval; use 60–200 ms for smooth
 cruising. Very long saved intervals can still cause watchdog stops between echoes.
 

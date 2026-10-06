@@ -2,6 +2,7 @@
 #define DECISION_TREE_H
 #include <stdint.h>
 #include "AutonomousDrive.h"
+#include "EncounterControl.h"
 
 // Range-only evidence. No leaf asserts that an echo is a human or a wall.
 enum class TargetClass { NO_DATA, TOO_CLOSE, COLLECTING, UNSTABLE, CLEAR, MOVING, STATIC_OBJECT };
@@ -55,11 +56,13 @@ struct AutoObservation {
   int16_t distanceCm;
   bool greetingDue;
   uint8_t turns, turnLimit;
+  bool seekingPath = false;
 };
 constexpr AutoAction decideAutomatic(AutoObservation o, int followCm, int clearCm) {
   return o.target == TargetClass::NO_DATA || o.target == TargetClass::TOO_CLOSE || o.target == TargetClass::UNSTABLE ? AutoAction::STOP
     : o.target == TargetClass::COLLECTING ? AutoAction::WAIT
     : o.locked && o.target == TargetClass::CLEAR ? AutoAction::RELEASE
+    : o.seekingPath ? (o.distanceCm >= clearCm ? AutoAction::ROAM : o.turns >= o.turnLimit ? AutoAction::BLOCKED : AutoAction::TURN)
     : !o.locked && o.target == TargetClass::MOVING ? (o.movingVotes >= 2 ? AutoAction::ACQUIRE : AutoAction::WAIT)
     : o.locked ? (o.distanceCm > followCm + 5 ? AutoAction::FOLLOW : AutoAction::HOLD)
     : o.distanceCm >= clearCm ? AutoAction::ROAM
@@ -196,4 +199,34 @@ constexpr bool clearPathCruiseRegression() {
   return starts==4 && drivingFrames>=102; // >=85% walking in this ideal echo trace.
 }
 static_assert(clearPathCruiseRegression(), "Stable clear path spends at least 85 percent of time cruising, not collecting");
+static_assert(decideAutomatic({TargetClass::MOVING,false,2,40,false,0,4,true},65,75)==AutoAction::TURN,
+  "After greeting, near movement must not immediately reacquire the same target");
+static_assert(decideAutomatic({TargetClass::STATIC_OBJECT,false,0,65,false,0,4,true},65,75)==AutoAction::TURN,
+  "Find a path outside the encounter zone instead of driving back at the greeted target");
+static_assert(decideAutomatic({TargetClass::MOVING,false,2,100,false,0,4,true},65,75)==AutoAction::ROAM,
+  "A newly clear path resumes exploration after interaction");
+static_assert(decideAutomatic({TargetClass::TOO_CLOSE,false,0,25,false,0,4,true},65,75)==AutoAction::STOP,
+  "Greeting completion cannot override raw close-stop safety");
+static_assert(decideAutomatic({TargetClass::NO_DATA,false,0,-1,false,0,4,true},65,75)==AutoAction::STOP,
+  "Missing data cannot authorize post-greeting turns");
+constexpr bool greetingRoutingRegression() {
+  EncounterControl encounter; encounter.greet(2000);
+  if (!encounter.finishGreeting(2990,false)) return false;
+  RangeWindow window; MovingEvidence moving;
+  const int16_t approach[] = {40,42,44,48};
+  for (int16_t cm : approach) {
+    window.add(cm); auto e=window.evidence(true,cm);
+    auto target=decideTarget(e,25,180,3); moving.add(target,e.deltaCm);
+  }
+  auto target=decideTarget(window.evidence(true,48),25,180,3);
+  int clear=encounterClearCm(roamStartCm(25,60),45,65);
+  if (moving.votes()!=2 || decideAutomatic({target,false,moving.votes(),48,false,0,4,
+      encounter.seekingPath()},65,clear)!=AutoAction::TURN) return false;
+  window.clear(); window.add(100); window.add(100); window.add(100);
+  target=decideTarget(window.evidence(true,100),25,180,3);
+  if (decideAutomatic({target,false,0,100,false,0,4,encounter.seekingPath()},65,clear)!=AutoAction::ROAM) return false;
+  encounter.pathOpened();
+  return !encounter.seekingPath() && !encounter.canGreet(5000,1500);
+}
+static_assert(greetingRoutingRegression(), "Greet once, ignore near reacquisition, turn, and resume a new clear path");
 #endif

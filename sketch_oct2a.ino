@@ -13,7 +13,7 @@
 
 RobotSettings robotSettings;
 ConfigStore configStore;
-const char* const FIRMWARE_VERSION = "2.3.0";
+const char* const FIRMWARE_VERSION = "2.3.1";
 uint32_t maxLoopUs = 0;
 #include "SongSystem.h"
 #include "FaceSystem.h"

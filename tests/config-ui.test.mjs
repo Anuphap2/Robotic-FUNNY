@@ -49,6 +49,18 @@ test('blank numeric form values are not silently exported as zero',()=>{
   const read=runInNewContext(formSource+'; valuesFromForm',{config:{schema},$:id=>inputs[id]});
   assert.equal(Number.isNaN(read().head_trim),true);assert.throws(()=>validate(read()));
 });
+test('post-greeting telemetry describes route finding instead of holding or greeting again',()=>{
+  let rows;
+  const renderSource=source.slice(source.indexOf('const decisionLabels='),source.indexOf('function updateTelemetry(d)'));
+  const render=runInNewContext(renderSource+'; updateInteractive',{
+    $:()=>({}),facts:(id,values)=>rows=values
+  });
+  for(const decision of ['greeting_done','post_greeting_scan','target_idle_escape']){
+    render({mode:'interactive',behavior:'avoid',targetClass:'static_object',decision,targetLocked:false});
+    assert.ok(rows[1][1].includes('หาทาง'),decision);
+    assert.equal(rows[2][1],'ยังไม่จับเป้าหมาย');
+  }
+});
 test('autonomous clearance and following distances respect stop and tracking zones',()=>{
   assert.throws(()=>validate({...defaults(),auto_stop_cm:60,auto_clear_cm:60}));
   assert.throws(()=>validate({...defaults(),auto_stop_cm:65,follow_distance_cm:65}));
