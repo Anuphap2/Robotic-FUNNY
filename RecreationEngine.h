@@ -244,8 +244,8 @@ private:
     switch (_searchPhase) {
       case 0:
         // กวาดทิศทางแรก (550 ms)
-        if (_searchTurnRight) _motor.turnRight(60);
-        else _motor.turnLeft(60);
+        if (_searchTurnRight) _motor.turnRight(SPEED_TURN_SEARCH);
+        else _motor.turnLeft(SPEED_TURN_SEARCH);
         _face.setFace(_searchTurnRight ? "look_right" : "look_left");
         if (elapsed >= 550) {
           _motor.stopMotors();
@@ -266,8 +266,8 @@ private:
 
       case 2:
         // กวาดทิศทางตรงข้าม (1100 ms)
-        if (_searchTurnRight) _motor.turnRight(60);
-        else _motor.turnLeft(60);
+        if (_searchTurnRight) _motor.turnRight(SPEED_TURN_SEARCH);
+        else _motor.turnLeft(SPEED_TURN_SEARCH);
         _face.setFace(_searchTurnRight ? "look_right" : "look_left");
         if (elapsed >= 1100) {
           _motor.stopMotors();
@@ -362,7 +362,7 @@ private:
     }
 
     // ------------------------------------------------------------------------
-    // 5. DIRECT if-else DISTANCE FOLLOWING (ตอบสนองฉับไวทันที!)
+    // 5. DIRECT if-else DISTANCE FOLLOWING (ตอบสนองฉับไว รักษา Torque สำหรับบอดี้หนัก)
     // ------------------------------------------------------------------------
     if (dist < 35.0f) {
       // < 35 cm: ใกล้เกินไป อันตราย -> หยุดสนิททันที!
@@ -371,8 +371,8 @@ private:
       _reason = "too_close_stop";
       _face.setFace("surprise");
     } else if (dist < 50.0f) {
-      // 35 - 50 cm: คนเดินเข้ามาชิดเกินไป -> ถอยหลังช้า ๆ (45%)
-      _motor.moveBackward(45);
+      // 35 - 50 cm: คนเดินเข้ามาชิดเกินไป -> ถอยหลังเว้นระยะ (85% เพื่อรักษาแรงบิดสำหรับตัวถังหนัก)
+      _motor.moveBackward(SPEED_REVERSE_PCT);
       _behavior = "avoid";
       _reason = "escape_reverse";
       _face.setFace("surprise");
@@ -382,21 +382,21 @@ private:
       _behavior = "follow";
       _reason = "follow_hold";
       _face.setFace("love");
-    } else if (dist <= 80.0f) {
-      // 65 - 80 cm: เดินหน้าช้า (50%)
-      _motor.moveForward(50);
+    } else if (dist <= 85.0f) {
+      // 65 - 85 cm: เดินหน้าตามชิด (85% ป้องกันมอเตอร์ติดขัดจากน้ำหนักตัวถัง)
+      _motor.moveForward(SPEED_FOLLOW_SLOW);
       _behavior = "follow";
       _reason = "follow_cruise";
       _face.setFace("normal");
-    } else if (dist <= 100.0f) {
-      // 80 - 100 cm: เดินหน้าปกติ (75%)
-      _motor.moveForward(75);
+    } else if (dist <= 110.0f) {
+      // 85 - 110 cm: เดินหน้าตามปกติ (95%)
+      _motor.moveForward(SPEED_FOLLOW_MID);
       _behavior = "follow";
       _reason = "follow_cruise";
       _face.setFace("happy");
     } else {
-      // 100 - 180 cm: เป้าหมายอยู่ไกล -> เดินหน้าเร็วเต็มกำลัง (100%)
-      _motor.moveForward(100);
+      // 110 - 180 cm: เป้าหมายอยู่ไกล -> เดินหน้าเต็มกำลัง (100%)
+      _motor.moveForward(SPEED_FOLLOW_FAST);
       _behavior = "follow";
       _reason = "follow_cruise";
       _face.setFace("happy");

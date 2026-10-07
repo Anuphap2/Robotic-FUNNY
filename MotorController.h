@@ -3,9 +3,12 @@
 #include <Arduino.h>
 #include "Config.h"
 #include "RuntimeConfig.h"
-#include "AutonomousDrive.h"
 #include <esp_timer.h>
 #include <driver/gpio.h>
+
+inline bool motorLeaseExpired(uint32_t now, uint32_t issued, uint32_t lease) {
+  return (now - issued) >= lease;
+}
 
 class MotorController {
 public:
@@ -53,7 +56,8 @@ public:
   void spinDance() { request(SPIN); }
   void stopMotors() { stop(); }
   void setSpeed(uint8_t pct) {
-    uint8_t s = constrain(pct, 10, 100);
+    // บอดี้หุ่นยนต์มีน้ำหนักมาก ไม่ควรลด PWM ต่ำเกินไปเพื่อรักษาแรงบิด (Torque) ไม่ให้ล้อติดขัด
+    uint8_t s = constrain(pct, MOTOR_MIN_SPEED_PCT, 100);
     setTrim(s, s);
   }
   void moveForward(uint8_t speed) { setSpeed(speed); request(FORWARD); }
