@@ -38,8 +38,8 @@
  X(BEAT_COOLDOWN,"beat_cooldown_ms","ระยะห่างระหว่าง beat","mic",100,2000,280,"ms","ป้องกันตรวจจังหวะเดียวซ้ำหลายครั้ง") \
  X(MIC_SMOOTH,"mic_smooth_pct","น้ำหนักข้อมูลใหม่","mic",1,100,63,"%","ค่าน้อยกรองนุ่ม ค่ามากตอบสนองเร็ว") \
  X(SONAR_ENABLED,"sonar_enabled","เปิด ultrasonic","sonar",0,1,1,"bool","ปิดแล้วระยะเป็นไม่มีข้อมูล") \
- X(SONAR_INTERVAL,"sonar_interval_ms","รอบวัดระยะ","sonar",60,1000,60,"ms","Interactive ควรใช้ 60–200 ms เพื่อเดินต่อเนื่อง ค่าสูงอาจขาดข้อมูลจน watchdog หยุด") \
- X(SONAR_TIMEOUT,"sonar_timeout_us","เวลารอ echo สูงสุด","sonar",2000,30000,22000,"us","จับขอบสัญญาณด้วย interrupt โดยไม่ใช้ pulseIn") \
+ X(SONAR_INTERVAL,"sonar_interval_ms","รอบวัดระยะ","sonar",20,1000,30,"ms","ความถี่สูง 30 ms เพื่อ track วัตถุที่เคลื่อนที่ได้ฉับไว") \
+ X(SONAR_TIMEOUT,"sonar_timeout_us","เวลารอ echo สูงสุด","sonar",2000,30000,12000,"us","12000 us (~205 cm) หลุดไว ไม่รอค้างเพื่อส่งพัลส์ถี่ๆ ได้") \
  X(DISTANCE_OFFSET,"distance_offset_mm","ชดเชยระยะ","sonar",-200,200,0,"mm","ชดเชยตำแหน่งติดตั้งเซนเซอร์") \
  X(AUDIO_ENABLED,"audio_enabled","เปิดเสียง buzzer","audio",0,1,1,"bool","ปิดแล้วหยุดเพลงและสั่งขาเสียง LOW") \
  X(AUDIO_VOLUME,"audio_volume_pct","ระดับ PWM เสียง","audio",0,100,100,"%","สัดส่วน duty ไม่ใช่ระดับ dB; 0 คือเงียบ") \

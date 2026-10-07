@@ -53,7 +53,7 @@ public:
   float distance() const { return _distance; }
   uint32_t distanceSequence() const { return _distanceSequence; }
   uint32_t distanceAge() const { return _distance < 0 ? 0 : millis() - _lastDistance; }
-  bool distanceValid() const { return _distance > 0 && distanceAge() < (uint32_t)robotSettings.get(SONAR_INTERVAL) * 3; }
+  bool distanceValid() const { return _distance > 0 && distanceAge() < (uint32_t)robotSettings.get(SONAR_INTERVAL) * 4; }
   bool consumeBeat() {
     bool found = _beat && millis() - _lastBeat < 500;
     _beat = false; return found;
@@ -89,7 +89,7 @@ private:
       _distance = pulse >= 100 && pulse <= (uint32_t)robotSettings.get(SONAR_TIMEOUT) && cm > 0 ? cm : -1;
       // An echo received before an HTTP stall is NOT a new measurement now.
       _lastDistance = completedMs;
-      if (millis() - completedMs >= static_cast<uint32_t>(robotSettings.get(SONAR_INTERVAL)) * 3) _distance = -1;
+      if (millis() - completedMs >= static_cast<uint32_t>(robotSettings.get(SONAR_INTERVAL)) * 4) _distance = -1;
       ++_distanceSequence;
     }
     if (!waiting && now - _lastSonar >= (uint32_t)robotSettings.get(SONAR_INTERVAL)) {
