@@ -2,6 +2,8 @@
 #define SERVO_OUTPUT_H
 #include <Arduino.h>
 #include "esp32-hal-ledc.h"
+#include "esp32-hal-periman.h"
+#include <driver/ledc.h>
 #include "ServoSignal.h"
 
 // Explicit channels use the core's actual attachment result instead of an
@@ -15,10 +17,10 @@ public:
     if (_attached) detach();
     _pin = pin; _minimum = minimum; _maximum = maximum;
     _attached = ledcAttachChannel(pin, SERVO_FREQUENCY_HZ, SERVO_RESOLUTION_BITS, _channel);
-    if (_attached && ledcReadFreq(pin) != SERVO_FREQUENCY_HZ) { detach(); return false; }
+    if (_attached && timerFrequency() != SERVO_FREQUENCY_HZ) { detach(); return false; }
     return _attached;
   }
-  constexpr bool attached() const { return _attached && ledcReadFreq(_pin) == SERVO_FREQUENCY_HZ; }
+  constexpr bool attached() const { return _attached && timerFrequency() == SERVO_FREQUENCY_HZ; }
   constexpr void detach() {
     if (!_attached) return;
     ledcWrite(_pin, 0); ledcDetach(_pin); _attached = false;
@@ -30,6 +32,14 @@ public:
     return ledcWrite(_pin, duty); // Duty is latched at a PWM boundary; no immediate readback comparison.
   }
 private:
+  constexpr uint32_t timerFrequency() const {
+    if (!_attached) return 0;
+    // Core 3.3.12 ledcReadFreq(pin) returns 0 at zero duty, including immediately
+    // after attach. Read the assigned hardware timer independently of duty.
+    const auto* bus = static_cast<const ledc_channel_handle_t*>(perimanGetPinBus(_pin, ESP32_BUS_TYPE_LEDC));
+    if (!bus || bus->channel != _channel || bus->channel_resolution != SERVO_RESOLUTION_BITS) return 0;
+    return ledc_get_freq(static_cast<ledc_mode_t>(bus->channel / SOC_LEDC_CHANNEL_NUM), static_cast<ledc_timer_t>(bus->timer_num));
+  }
   const uint8_t _channel;
   uint8_t _pin = 0;
   bool _attached = false;

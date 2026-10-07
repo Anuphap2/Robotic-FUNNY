@@ -15,7 +15,7 @@
 
 RobotSettings robotSettings;
 ConfigStore configStore;
-const char* const FIRMWARE_VERSION = "2.3.3";
+const char* const FIRMWARE_VERSION = "2.3.4";
 uint32_t maxLoopUs = 0;
 uint32_t driveBootId = 0;
 ManualDriveGuard manualDriveGuard;
@@ -51,7 +51,7 @@ void handleRoot() {
 void sendError(int status, const char* code) {
   server.sendHeader("Cache-Control", "no-store");
   char json[224];
-  snprintf(json, sizeof(json), "{\"ok\":false,\"error\":\"%s\",\"uptimeMs\":%lu,\"driveBootId\":%lu}", code, (unsigned long)millis(), (unsigned long)driveBootId);
+  snprintf(json, sizeof(json), "{\"ok\":false,\"error\":\"%s\",\"version\":\"%s\",\"uptimeMs\":%lu,\"driveBootId\":%lu}", code, FIRMWARE_VERSION, (unsigned long)millis(), (unsigned long)driveBootId);
   server.send(status, "application/json", json);
 }
 
@@ -251,6 +251,14 @@ bool handleWebMotor(const String& cmd) {
   return motorController.handleCommand(cmd, cmd == "stop" ? 0 : manualDriveRemaining(now, issued));
 }
 
+bool requireServos(const String& axis) {
+  if (!robotSettings.get(SERVO_ENABLED)) { sendError(409, "servo_disabled"); return false; }
+  if ((axis.length() == 0 || axis == "head") && !motionPlayer.headReady()) { sendError(503, "head_servo_pwm_unavailable"); return false; }
+  if ((axis.length() == 0 || axis == "left") && !motionPlayer.leftReady()) { sendError(503, "left_servo_pwm_unavailable"); return false; }
+  if ((axis.length() == 0 || axis == "right") && !motionPlayer.rightReady()) { sendError(503, "right_servo_pwm_unavailable"); return false; }
+  return true;
+}
+
 void handleAction() {
   if (!allowMutation()) return;
   if (!server.hasArg("cmd")) { sendError(400, "cmd_required"); return; }
@@ -282,7 +290,16 @@ void handleAction() {
     else if (cmd == "stop" || cmd == "off") { stopAll(); ok = true; }
   } else if (type == "showcase") {
     String motion = server.hasArg("motion") ? server.arg("motion") : "dance";
-    if (motion.length() <= 64) ok = recreationEngine.startShowcase(cmd.c_str(), motion.c_str());
+    if (motion.length() > 64) { sendError(422, "invalid_motion"); return; }
+    if (!requireServos("")) return;
+    if (!robotSettings.get(AUDIO_ENABLED) || !robotSettings.get(AUDIO_VOLUME)) { sendError(409, "audio_disabled"); return; }
+    bool songKnown = false, motionKnown = false;
+    for (const auto& song : SONG_REGISTRY) if (cmd == song.id) songKnown = true;
+    for (const auto& routine : MOTION_REGISTRY) if (motion == routine.id) motionKnown = true;
+    if (!songKnown) { sendError(422, "invalid_song"); return; }
+    if (!motionKnown) { sendError(422, "invalid_motion"); return; }
+    ok = recreationEngine.startShowcase(cmd.c_str(), motion.c_str());
+    if (!ok) { sendError(503, songPlayer.hardwareOK() ? "servo_write_failed" : "audio_pwm_unavailable"); return; }
   } else if (type == "song") {
     if (cmd == "stop") { songPlayer.stop(); ok = true; }
     else ok = songPlayer.playById(cmd.c_str());
@@ -295,10 +312,13 @@ void handleAction() {
     else ok = false;
   } else if (type == "face") ok = faceEngine.setFace(cmd.c_str());
   else if (type == "motion") {
-    if (!robotSettings.get(SERVO_ENABLED)) { sendError(409, "servo_disabled"); return; }
-    if (!motionPlayer.ready()) { sendError(503, "servo_pwm_unavailable"); return; }
+    if (!requireServos("")) return;
+    bool motionKnown = false;
+    for (const auto& routine : MOTION_REGISTRY) if (cmd == routine.id) motionKnown = true;
+    if (!motionKnown) { sendError(422, "invalid_motion"); return; }
     if (recreationEngine.mode() != MODE_MANUAL) recreationEngine.setMode(MODE_MANUAL, false);
     ok = motionPlayer.playById(cmd.c_str());
+    if (!ok) { sendError(503, "servo_write_failed"); return; }
     if (ok && cmd == "six_seven") faceEngine.setTemporaryFace("six_seven", 3000);
   } else if (type == "servo") {
     if (!robotSettings.get(SERVO_ENABLED)) { sendError(409, "servo_disabled"); return; }
@@ -307,16 +327,19 @@ void handleAction() {
       if ((axis != "head" && axis != "left" && axis != "right") || !parseConfigInteger(server.arg("angle"), angle) || angle < 0 || angle > 180) {
         sendError(422, "invalid_servo_angle"); return;
       }
+      if (!requireServos(axis)) return;
       stopAll();
-      if (!motionPlayer.setManualAxis(axis, angle)) { sendError(503, "servo_pwm_unavailable"); return; }
+      if (!motionPlayer.setManualAxis(axis, angle)) { sendError(503, "servo_write_failed"); return; }
       ok = true;
     } else {
       int32_t angles[3]; const char* keys[] = {"head", "left", "right"};
       for (int i = 0; i < 3; ++i) {
         if (!server.hasArg(keys[i]) || !parseConfigInteger(server.arg(keys[i]), angles[i]) || angles[i] < 0 || angles[i] > 180) { sendError(422, "invalid_servo_angle"); return; }
       }
-      if (!motionPlayer.ready()) { sendError(503, "servo_pwm_unavailable"); return; }
-      stopAll(); motionPlayer.setManualAngles(angles[0], angles[1], angles[2]); ok = true;
+      if (!requireServos("")) return;
+      stopAll();
+      if (!motionPlayer.setManualAngles(angles[0], angles[1], angles[2])) { sendError(503, "servo_write_failed"); return; }
+      ok = true;
     }
   } else if (type.length() == 0) {
     if (cmd == "stop_all") { stopAll(); ok = true; }

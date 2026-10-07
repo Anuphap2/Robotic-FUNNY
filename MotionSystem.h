@@ -204,7 +204,7 @@ public:
     _loop = loop;
     _frameIdx = 0;
     _isMoving = true;
-    _applyFrame(_activeRoutine->frames[0]);
+    if (!_applyFrame(_activeRoutine->frames[0])) { freeze(); return false; }
     _timer = millis();
     return true;
   }
@@ -222,12 +222,12 @@ public:
     if (now - _timer >= (uint32_t)current.holdMs * 100 / robotSettings.get(MOTION_SPEED)) {
       _frameIdx++;
       if (_frameIdx < _activeRoutine->length) {
-        _applyFrame(_activeRoutine->frames[_frameIdx]);
+        if (!_applyFrame(_activeRoutine->frames[_frameIdx])) { freeze(); return; }
         _timer = now;
       } else {
         if (_loop) {
           _frameIdx = 0;
-          _applyFrame(_activeRoutine->frames[0]);
+          if (!_applyFrame(_activeRoutine->frames[0])) { freeze(); return; }
           _timer = now;
         } else {
           _isMoving = false;
@@ -241,10 +241,10 @@ public:
   bool isMoving() const { return _isMoving; }
   const MotionRoutine* currentRoutine() const { return _activeRoutine; }
 
-  void setManualAngles(int head, int armL, int armR) {
+  bool setManualAngles(int head, int armL, int armR) {
     _isMoving = false;
     _activeRoutine = nullptr;
-    writeAngles(head, armL, armR);
+    return writeAngles(head, armL, armR);
   }
   bool setManualAxis(const String& axis, int angle) {
     if (!robotSettings.get(SERVO_ENABLED)) return false;
@@ -270,13 +270,14 @@ private:
   void attachServo(ServoOutput& servo, int pin) {
     if (!servo.attach(pin, _pulseLow, _pulseHigh)) Serial.printf("[SERVO] PWM attach failed on GPIO %d\n", pin);
   }
-  void writeAngles(int head, int left, int right) {
-    if (!robotSettings.get(SERVO_ENABLED)) return;
-    if (_servoHead.attached()) _servoHead.write(robotSettings.servoAngle(HEAD_MIN, head));
-    if (_servoArmL.attached()) _servoArmL.write(robotSettings.servoAngle(LEFT_MIN, left));
-    if (_servoArmR.attached()) _servoArmR.write(robotSettings.servoAngle(RIGHT_MIN, right));
+  bool writeAngles(int head, int left, int right) {
+    if (!robotSettings.get(SERVO_ENABLED)) return false;
+    const bool headOK = _servoHead.write(robotSettings.servoAngle(HEAD_MIN, head));
+    const bool leftOK = _servoArmL.write(robotSettings.servoAngle(LEFT_MIN, left));
+    const bool rightOK = _servoArmR.write(robotSettings.servoAngle(RIGHT_MIN, right));
+    return headOK && leftOK && rightOK;
   }
-  void _applyFrame(const ServoKeyframe& frame) { writeAngles(frame.head, frame.armL, frame.armR); }
+  bool _applyFrame(const ServoKeyframe& frame) { return writeAngles(frame.head, frame.armL, frame.armR); }
 };
 
 #endif // MOTION_SYSTEM_H

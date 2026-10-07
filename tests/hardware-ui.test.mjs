@@ -44,3 +44,13 @@ test('single-axis test sends only the selected saved-config angle and blocks dir
   assert.equal(calls[0][2].axis,'left');assert.equal(calls[0][2].angle,'40');
   dirty=true;run('head');assert.equal(calls.length,1);assert.equal(toasts.length,1);
 });
+test('servo and showcase failures identify the affected device and firmware',()=>{
+  const start=source.indexOf('const errors='),end=source.indexOf('function toast(',start);
+  const message=runInNewContext(source.slice(start,end)+'; messageFor',{config:null});
+  assert.match(message('head_servo_pwm_unavailable','2.3.4'),/เซอร์โวหัว.*Firmware 2\.3\.4/);
+  assert.match(message('left_servo_pwm_unavailable'),/แขนซ้าย/);
+  assert.match(message('right_servo_pwm_unavailable'),/แขนขวา/);
+  assert.match(message('servo_write_failed'),/พัลส์เซอร์โว/);
+  assert.match(message('audio_disabled'),/ความดังเป็นศูนย์/);
+  assert.match(message('audio_pwm_unavailable'),/สัญญาณเสียง/);
+});

@@ -2,6 +2,7 @@
 // Evaluates the actual production class; only the peripheral API is substituted.
 #include "../ServoOutput.h"
 static_assert(SERVO_FREQUENCY_HZ == 50 && SERVO_PERIOD_US == 20000, "20 ms servo frames");
+static_assert(ledcReadFreq(18) == 0, "core pin frequency helper returns zero before the first pulse");
 static_assert(servoPulseUs(0, 500, 2400) == 500, "minimum pulse");
 static_assert(servoPulseUs(90, 500, 2400) == 1450, "center pulse");
 static_assert(servoPulseUs(180, 500, 2400) == 2400, "maximum pulse");
