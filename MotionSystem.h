@@ -160,7 +160,9 @@ public:
 
   void begin() {
     ESP32PWM::allocateTimer(0);
-    // Three servos share timer 0; buzzer uses channel 6 / timer 3.
+    ESP32PWM::allocateTimer(1);
+    ESP32PWM::allocateTimer(2);
+    // Head -> Timer 0, Left Arm -> Timer 1, Right Arm -> Timer 2; Buzzer -> Channel 6 / Timer 3
     applyConfig();
   }
 
@@ -175,6 +177,10 @@ public:
     attachServo(_servoHead, PIN_SERVO_HEAD);
     attachServo(_servoArmL, PIN_SERVO_ARM_L);
     attachServo(_servoArmR, PIN_SERVO_ARM_R);
+    Serial.printf("[SERVO] Attach status -> Head(pin %d): %d | ArmL(pin %d): %d | ArmR(pin %d): %d\n",
+                  PIN_SERVO_HEAD, _servoHead.attached(),
+                  PIN_SERVO_ARM_L, _servoArmL.attached(),
+                  PIN_SERVO_ARM_R, _servoArmR.attached());
     toCenter();
   }
 
