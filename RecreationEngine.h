@@ -371,8 +371,8 @@ private:
       }
     }
 
-    // ตรวจพบสิ่งกีดขวางหรือกำแพง (< 38 cm)
-    if (dist > 0 && dist <= 38.0f) {
+    // ตรวจพบสิ่งกีดขวางหรือกำแพง (< AVOID_DISTANCE_THRESHOLD_CM)
+    if (dist > 0 && dist <= AVOID_DISTANCE_THRESHOLD_CM) {
       _motor.stopMotors();
       _isAvoiding = true;
       _avoidTimer = now;
@@ -411,8 +411,8 @@ private:
       _consecutiveBlocks = 0;
     }
 
-    // ทางข้างหน้าโล่ง (> 38 cm หรือไม่มีสิ่งกีดขวาง) -> เดินหน้าสำรวจเต็มกำลัง 100%
-    _motor.moveForward(SPEED_ROAM_FORWARD); // มอเตอร์ 100% เท่ากัน ขับเคลื่อนบอดี้หนัก
+    // ทางข้างหน้าโล่ง (> AVOID_DISTANCE_THRESHOLD_CM หรือไม่มีสิ่งกีดขวาง) -> เดินหน้าสำรวจเต็มกำลัง Direct Drive
+    _motor.moveForward(); // ขับเคลื่อน Direct Digital Full Drive 100% ต่อเนื่อง
     _behavior = "roam";
     _reason = "roam_cruise";
 
