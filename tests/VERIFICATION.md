@@ -1,74 +1,103 @@
-# Verification — firmware 2.3.2
+# Verification — firmware 2.3.3
 
-Checked on 7 October 2026 (Asia/Bangkok). No firmware was uploaded and no
-physical robot was driven. Hardware observations remain supplied by the user.
+Checked on 8 October 2026 (Asia/Bangkok). No firmware was uploaded and no
+physical robot was driven. The user reports that the web stays connected while
+all servos and motors remain still. No measured rail voltage or serial boot log
+has been supplied, so the physical cause remains unconfirmed.
 
-## Manual control regressions
+## Software checks
 
-Node runs the actual dashboard functions extracted from WebUI.h:
+Node executes the actual functions extracted from WebUI.h:
 
-- 13 existing configuration/telemetry tests: 51 fields, bounds, types, servo
-  limits, distances, unknown/GPIO fields, blank values, v1/v2 import compatibility,
-  and Interactive controls/status.
-- 9 manual-control tests: stop while a forward request is outstanding, release
-  abort propagation, heartbeat timing including network wait, no parallel drive
-  queue, direction change waiting for stop acknowledgement, late old completion,
-  old button release, failure without automatic movement retry, idle/active page
-  exit, telemetry cancellation, offline stop, reboot/clock ordering, and mode
-  change waiting for the outstanding stop.
-- Dashboard and preview JavaScript syntax checked.
+- 13 configuration/telemetry tests: 51 settings, bounds, types, servo limits,
+  distances, unknown/GPIO fields, blank values, v1/v2 imports and Interactive UI.
+- 9 manual-control regressions: outstanding request/stop/abort ordering,
+  heartbeat timing, no parallel drive queue, direction/mode changes, late
+  responses, old button release, stalled requests without automatic movement
+  retry, page exit, telemetry cancellation, offline stop and reboot clocks.
+- 6 hardware UI tests: live enable flags override stale config; each servo's
+  status is independent; watchdog errors and panic/brownout differ; old telemetry
+  does not invent readiness; GPIO polarity/low outputs/pending transitions are
+  reported; individual servo tests use only the chosen slider and reject drafts.
 
 Command: node --test tests/config-ui.test.mjs tests/manual-drive-ui.test.mjs
-Result: 22 passed, 0 failed.
+  tests/hardware-ui.test.mjs
+Result: 28 passed, 0 failed. Dashboard and preview JavaScript syntax passed.
 
-Ten compile-time assertions in manual-drive-policy.cpp execute the production
-ManualDriveGuard.h functions. Checked with the installed ESP32 C++ compiler,
-C++17, -fsyntax-only. Covers lease age/expiry/future timestamps, millis rollover,
-late and duplicate sequences after a stop, global cancellation, bounded four-page
-capacity, slot reuse, invalid packets not poisoning a sequence, and cancellation
-across rollover. Passed. No test buffers are linked into the firmware.
+The installed ESP32 C++ compiler, C++17, -fsyntax-only, also passed:
+
+- Ten assertions executing production ManualDriveGuard.h, covering expiry,
+  future timestamps, rollover, stop/cancellation ordering, duplicate sequences,
+  four-page capacity, slot reuse and invalid packets.
+- Twelve assertions per compilation executing production ServoOutput.h and
+  ServoSignal.h, in four peripheral modes: normal attachment, attachment failure,
+  wrong frequency and write failure. Covers 50 Hz / 20 ms frames, saved pulse
+  calibration, angle clamping, 16-bit duty, invalid settings, independent
+  channels, detach/retry and error propagation. Only the peripheral calls are
+  stubbed; these checks do not prove actual electrical output. Test stubs and
+  assertions are not linked into the firmware.
+
+Telemetry format fits its fixed 1,536-byte buffer: a conservative 1,271-byte
+estimate uses 32-byte quoted values, full uint32/32-bit integer widths, full
+boolean literals and a wider distance than this sensor reports. The runtime
+snprintf truncation check remains. Diagnostics use fixed stack buffers; response
+transmission retains the web core's existing allocations.
+Git diff --check passed.
 
 ## ESP32 build
 
-Final source compiled successfully with esp32:esp32:esp32, ESP32 core 3.3.12,
---warnings all, and installed libraries. All changed production files match the
-build copy after excluding Arduino-generated declarations and line markers.
+Final source compiled successfully for esp32:esp32:esp32, ESP32 core 3.3.12,
+--warnings all, using installed libraries. No project-source diagnostics.
 
-- Program: 1,086,406 / 1,310,720 bytes (82%).
-- Static RAM: 52,824 / 327,680 bytes (16%); 274,856 remain before runtime allocation.
-- No project-source diagnostics. Earlier clean builds reported only the existing
-  ESP32Servo unused-variable warnings; the final incremental build passed.
-- The verified working tree includes the user's uncommitted GPIO refresh,
-  obstacle threshold and debounce changes. Those changes were preserved and
-  intentionally not added to this fix's commit.
+- Program: 1,086,002 / 1,310,720 bytes (82%).
+- Static RAM: 52,512 / 327,680 bytes (16%); 275,168 before runtime allocation.
+- ESP32Servo is no longer a firmware dependency. The new servo driver uses the
+  core's attachment result and frequency readback, channels 0/1/2, 50 Hz/16-bit.
+  Buzzer remains channel 6/10-bit; core 3.3.12 assigns timers dynamically according
+  to compatible frequency and resolution, not a fixed channel-to-timer mapping.
+- Ten source files match the final build snapshot: sketch, servo output/signal,
+  motion, motor, song, dashboard, RuntimeConfig, Config and RecreationEngine.
+  Arduino-generated prototypes/line markers are excluded from this comparison.
 
-## Scope and hardware limits
+The installed ESP32PWM attachPin path sets its attachedState before checking
+ledcAttachChannel and retains that state on failure. This is a verified false
+readiness path, not evidence that it failed on the user's board. The currently
+installed ESP32Servo setTimerWidth guards a zero width difference, so a division
+by zero is not established as the cause of this incident. External libraries
+were only read, not modified by this fix.
 
-MotorController's command handler now reports rejected movement truthfully and
-passes the web's remaining lease to the independent motor timer. The user's
-existing direct digital drive and repeated GPIO writes were preserved. No PWM
-speed calibration or physical wheel feedback was introduced. setSpeed/setTrim
-remain no-ops in this baseline; equal command voltage cannot guarantee equal RPM.
+## Preserved state and hardware limits
 
-All 13 pin assignments match the starting revision; Config.h and concurrent
-RecreationEngine.h edits are outside this fix and are left uncommitted. The motor
-file's pre-existing GPIO refresh changes are also left uncommitted; only the new
-command handler is included in this commit. Existing config keys, order, numeric
-bounds/defaults and NVS schema remain compatible. No reset or config erase.
+All 13 GPIO assignments match starting revision 0192c93. Existing settings,
+key order, bounds/defaults and NVS v2 schema remain compatible. No reset or
+config erase. Config.h and RecreationEngine.h user edits are left uncommitted.
+The user's motor GPIO refresh/digitalWrite changes are preserved in the tested
+working tree and excluded from this commit with a separately staged motor
+snapshot; only this fix's watchdog lifecycle, diagnostics and stale-drive
+fallback are committed in that file.
 
-HTTP is still served cooperatively through the ESP32 core parser. Idle connection
-wait is shortened to 150 ms, stream idle timeout to 100 ms, and response sending
-has a 350 ms budget. This is not a hard total parse deadline for all possible
-requests. The motor timer and timestamp-based lease, rather than browser abort,
-provide the software cutoff during a stalled request. Wi-Fi modem sleep is off.
+Web commands now distinguish disabled devices from driver initialization errors.
+A retry first stops motors/audio/motion/autonomy, cancels manual drive, reuses
+an existing timer handle and reattaches enabled servos at their saved rest angles.
+It respects saved disable flags. Single-axis tests can operate a healthy servo
+without requiring the other two outputs to be ready.
 
-A real-board check is still required: press/release/stop under weak Wi-Fi,
-changing direction/mode, page closure, router loss, actual lease cutoff and
-braking distance, root/config/catalog loading, input/output voltages under load,
-and the powered-off motor-output swap described in README. Motor readiness is
-software readiness; it does not measure RPM, motor current, or driver voltage.
+Motor GPIO levels come from gpio_get_level on the original output pins. This
+core's OUTPUT mode also enables input readback. The snapshot holds the motor
+lock; it reports logic levels, pending direction, command age and lease. Both
+telemetry and action responses include it, so manual driving can display the
+acknowledged signal state while telemetry is paused. It cannot measure driver
+voltage, current, encoder/RPM or confirm physical wheel rotation.
 
-tests/preview.mjs is a UI fixture only, with compatible boot/time metadata. It
-does not execute the production guard, confirm physical movement, or measure
-ESP32 network latency. Older autonomy verification is historical in Git; it is
-not evidence for the user's subsequently changed autonomy engine.
+Existing direct digital drive, 5 ms direction dead time, independent 2 ms motor
+timer, 400 ms timestamp-based manual lease, 100 ms heartbeat and 350 ms web-drive
+request timeout remain. setSpeed/setTrim are still no-ops in the user's baseline.
+No physical wheel speed calibration is claimed.
+
+Real-board checks remain: upload and reload the dashboard; confirm saved enables
+and per-axis status; with wheels lifted test stop/release/direction changes and
+individual servos; measure power and driver outputs under load if GPIO changes
+but motors stay still. The user reports a 5V 3A stepdown; its label alone does
+not prove the voltage during motor/servo startup. README contains the powered-off
+motor-output swap check. tests/preview.mjs is a browser fixture only, not the
+production hardware lifecycle or a measurement of ESP32 latency.

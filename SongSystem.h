@@ -539,7 +539,7 @@ private:
   bool _attached = false, _standaloneBeep = false, _hardwareOK = true;
   uint32_t scaledDuty(uint32_t duty) const { return duty * robotSettings.get(AUDIO_VOLUME) / 100; }
   bool _attachTone(uint16_t frequency) {
-    // Classic ESP32: channel 6 / timer 3 cannot change the servo timer 0.
+    // Separate channel and 10-bit resolution; core 3.x assigns compatible timers.
     _attached = ledcAttachChannel(_pin, frequency, 10, 6);
     _hardwareOK = _attached;
     if (!_attached) { stop(); return false; }

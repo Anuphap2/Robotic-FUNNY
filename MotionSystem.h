@@ -2,7 +2,7 @@
 #define MOTION_SYSTEM_H
 
 #include <Arduino.h>
-#include <ESP32Servo.h>
+#include "ServoOutput.h"
 #include "Config.h"
 #include "RuntimeConfig.h"
 
@@ -159,19 +159,13 @@ public:
     _loop(false) {}
 
   void begin() {
-    ESP32PWM::allocateTimer(0);
-    ESP32PWM::allocateTimer(1);
-    ESP32PWM::allocateTimer(2);
-    // Head -> Timer 0, Left Arm -> Timer 1, Right Arm -> Timer 2; Buzzer -> Channel 6 / Timer 3
     applyConfig();
   }
 
   void applyConfig() {
     freeze();
     int low = robotSettings.get(SERVO_MIN_US_CFG), high = robotSettings.get(SERVO_MAX_US_CFG);
-    if (!robotSettings.get(SERVO_ENABLED) || low != _pulseLow || high != _pulseHigh) {
-      _servoHead.detach(); _servoArmL.detach(); _servoArmR.detach();
-    }
+    _servoHead.detach(); _servoArmL.detach(); _servoArmR.detach();
     _pulseLow = low; _pulseHigh = high;
     if (!robotSettings.get(SERVO_ENABLED)) return;
     attachServo(_servoHead, PIN_SERVO_HEAD);
@@ -185,7 +179,10 @@ public:
   }
 
   void freeze() { _isMoving = false; _activeRoutine = nullptr; }
-  bool ready() { return _servoHead.attached() && _servoArmL.attached() && _servoArmR.attached(); }
+  bool ready() const { return headReady() && leftReady() && rightReady(); }
+  bool headReady() const { return _servoHead.attached(); }
+  bool leftReady() const { return _servoArmL.attached(); }
+  bool rightReady() const { return _servoArmR.attached(); }
 
   void toCenter() {
     freeze();
@@ -249,11 +246,19 @@ public:
     _activeRoutine = nullptr;
     writeAngles(head, armL, armR);
   }
+  bool setManualAxis(const String& axis, int angle) {
+    if (!robotSettings.get(SERVO_ENABLED)) return false;
+    freeze();
+    if (axis == "head") return _servoHead.write(robotSettings.servoAngle(HEAD_MIN, angle));
+    if (axis == "left") return _servoArmL.write(robotSettings.servoAngle(LEFT_MIN, angle));
+    if (axis == "right") return _servoArmR.write(robotSettings.servoAngle(RIGHT_MIN, angle));
+    return false;
+  }
 
 private:
-  Servo _servoHead;
-  Servo _servoArmL;
-  Servo _servoArmR;
+  ServoOutput _servoHead{0};
+  ServoOutput _servoArmL{1};
+  ServoOutput _servoArmR{2};
 
   const MotionRoutine* _activeRoutine;
   size_t _frameIdx;
@@ -262,10 +267,8 @@ private:
   bool _loop;
 
   int _pulseLow = 0, _pulseHigh = 0;
-  void attachServo(Servo& servo, int pin) {
-    if (servo.attached()) return;
-    servo.setPeriodHertz(50);
-    servo.attach(pin, _pulseLow, _pulseHigh);
+  void attachServo(ServoOutput& servo, int pin) {
+    if (!servo.attach(pin, _pulseLow, _pulseHigh)) Serial.printf("[SERVO] PWM attach failed on GPIO %d\n", pin);
   }
   void writeAngles(int head, int left, int right) {
     if (!robotSettings.get(SERVO_ENABLED)) return;

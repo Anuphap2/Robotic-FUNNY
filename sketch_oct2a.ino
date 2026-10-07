@@ -4,7 +4,6 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
-#include <ESP32Servo.h>
 
 #include "Config.h"
 #include "RuntimeConfig.h"
@@ -12,10 +11,11 @@
 #include "ManualDriveGuard.h"
 #include <esp_random.h>
 #include <esp_heap_caps.h>
+#include <esp_system.h>
 
 RobotSettings robotSettings;
 ConfigStore configStore;
-const char* const FIRMWARE_VERSION = "2.3.2";
+const char* const FIRMWARE_VERSION = "2.3.3";
 uint32_t maxLoopUs = 0;
 uint32_t driveBootId = 0;
 ManualDriveGuard manualDriveGuard;
@@ -72,13 +72,16 @@ void stopAll() {
 }
 
 void handleTelemetry() {
-  char json[1280];
+  char json[1536];
+  const auto motorSignal = motorController.signalStatus();
   int length = snprintf(json, sizeof(json),
     "{\"vol\":%d,\"peak\":%d,\"dist\":%.1f,\"distanceValid\":%s,\"distanceAgeMs\":%lu,"
     "\"baseline\":%d,\"calibrating\":%s,\"mode\":\"%s\",\"dir\":\"%s\",\"face\":\"%s\","
     "\"timbre\":\"%s\",\"isPlaying\":%s,\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargest\":%lu,"
     "\"uptimeMs\":%lu,\"driveBootId\":%lu,\"maxLoopUs\":%lu,\"oledReady\":%s,\"servoReady\":%s,\"audioReady\":%s,\"motorReady\":%s,"
-    "\"rssi\":%d,\"networkMode\":\"%s\",\"ip\":\"%s\",\"version\":\"%s\",\"revision\":%lu,\"pollMs\":%ld,\"interactive\":\"%s\",\"targetClass\":\"%s\",\"decision\":\"%s\",\"behavior\":\"%s\",\"targetLocked\":%s,\"movingVotes\":%u}",
+    "\"rssi\":%d,\"networkMode\":\"%s\",\"ip\":\"%s\",\"version\":\"%s\",\"revision\":%lu,\"pollMs\":%ld,\"interactive\":\"%s\",\"targetClass\":\"%s\",\"decision\":\"%s\",\"behavior\":\"%s\",\"targetLocked\":%s,\"movingVotes\":%u,"
+    "\"motorEnabled\":%s,\"servoEnabled\":%s,\"headServoReady\":%s,\"leftServoReady\":%s,\"rightServoReady\":%s,\"motorInitError\":\"%s\",\"resetReason\":%d,"
+    "\"motorGPIO\":%u,\"motorPending\":%s,\"motorCommandAgeMs\":%lu,\"motorLeaseMs\":%lu}",
     sensorManager.volume(), sensorManager.peakVolume(), sensorManager.distance(),
     sensorManager.distanceValid() ? "true" : "false", (unsigned long)sensorManager.distanceAge(),
     sensorManager.baseline(), sensorManager.calibrating() ? "true" : "false",
@@ -95,7 +98,12 @@ void handleTelemetry() {
     FIRMWARE_VERSION, (unsigned long)configStore.revision(), (long)robotSettings.get(TELEMETRY_INTERVAL),
     recreationEngine.interactiveString(), recreationEngine.decisionClass(), recreationEngine.decisionReason(),
     recreationEngine.behaviorString(), recreationEngine.targetLocked() ? "true" : "false",
-    static_cast<unsigned int>(recreationEngine.movingVotes()));
+    static_cast<unsigned int>(recreationEngine.movingVotes()),
+    robotSettings.get(MOTOR_ENABLED) ? "true" : "false", robotSettings.get(SERVO_ENABLED) ? "true" : "false",
+    motionPlayer.headReady() ? "true" : "false", motionPlayer.leftReady() ? "true" : "false", motionPlayer.rightReady() ? "true" : "false",
+    motorController.initError(), static_cast<int>(esp_reset_reason()),
+    static_cast<unsigned int>(motorSignal.gpioLevels), motorSignal.pending ? "true" : "false",
+    (unsigned long)motorSignal.commandAgeMs, (unsigned long)motorSignal.leaseMs);
   if (length < 0 || static_cast<size_t>(length) >= sizeof(json)) { sendError(500, "telemetry_too_large"); return; }
   server.sendHeader("Cache-Control", "no-store");
   server.send(200, "application/json", json);
@@ -254,7 +262,14 @@ void handleAction() {
   else if (type == "system" && cmd == "calibrate_mic") {
     if (!robotSettings.get(MIC_ENABLED)) { sendError(409, "mic_disabled"); return; }
     stopAll(); sensorManager.startCalibration(); ok = true;
+  } else if (type == "system" && cmd == "retry_hardware") {
+    stopAll(); motorController.begin(); motionPlayer.applyConfig();
+    if (robotSettings.get(MOTOR_ENABLED) && !motorController.ready()) { sendError(503, "motor_watchdog_unavailable"); return; }
+    if (robotSettings.get(SERVO_ENABLED) && !motionPlayer.ready()) { sendError(503, "servo_pwm_unavailable"); return; }
+    ok = true;
   } else if (type == "motor") {
+    if (cmd != "stop" && !robotSettings.get(MOTOR_ENABLED)) { sendError(409, "motor_disabled"); return; }
+    if (cmd != "stop" && !motorController.ready()) { sendError(503, "motor_watchdog_unavailable"); return; }
     ok = handleWebMotor(cmd);
     if (!ok) { sendError(409, "drive_rejected_refresh"); return; }
   }
@@ -280,15 +295,27 @@ void handleAction() {
     else ok = false;
   } else if (type == "face") ok = faceEngine.setFace(cmd.c_str());
   else if (type == "motion") {
+    if (!robotSettings.get(SERVO_ENABLED)) { sendError(409, "servo_disabled"); return; }
+    if (!motionPlayer.ready()) { sendError(503, "servo_pwm_unavailable"); return; }
     if (recreationEngine.mode() != MODE_MANUAL) recreationEngine.setMode(MODE_MANUAL, false);
     ok = motionPlayer.playById(cmd.c_str());
     if (ok && cmd == "six_seven") faceEngine.setTemporaryFace("six_seven", 3000);
   } else if (type == "servo") {
-    int32_t angles[3]; const char* keys[] = {"head", "left", "right"};
-    for (int i = 0; i < 3; ++i) {
-      if (!server.hasArg(keys[i]) || !parseConfigInteger(server.arg(keys[i]), angles[i]) || angles[i] < 0 || angles[i] > 180) { sendError(422, "invalid_servo_angle"); return; }
-    }
-    if (robotSettings.get(SERVO_ENABLED) && motionPlayer.ready()) {
+    if (!robotSettings.get(SERVO_ENABLED)) { sendError(409, "servo_disabled"); return; }
+    if (cmd == "axis") {
+      String axis = server.arg("axis"); int32_t angle;
+      if ((axis != "head" && axis != "left" && axis != "right") || !parseConfigInteger(server.arg("angle"), angle) || angle < 0 || angle > 180) {
+        sendError(422, "invalid_servo_angle"); return;
+      }
+      stopAll();
+      if (!motionPlayer.setManualAxis(axis, angle)) { sendError(503, "servo_pwm_unavailable"); return; }
+      ok = true;
+    } else {
+      int32_t angles[3]; const char* keys[] = {"head", "left", "right"};
+      for (int i = 0; i < 3; ++i) {
+        if (!server.hasArg(keys[i]) || !parseConfigInteger(server.arg(keys[i]), angles[i]) || angles[i] < 0 || angles[i] > 180) { sendError(422, "invalid_servo_angle"); return; }
+      }
+      if (!motionPlayer.ready()) { sendError(503, "servo_pwm_unavailable"); return; }
       stopAll(); motionPlayer.setManualAngles(angles[0], angles[1], angles[2]); ok = true;
     }
   } else if (type.length() == 0) {
@@ -307,8 +334,11 @@ void handleAction() {
     manualDriveGuard.cancelAll(millis());
   }
   server.sendHeader("Cache-Control", "no-store");
-  char response[112];
-  snprintf(response, sizeof(response), "{\"ok\":true,\"uptimeMs\":%lu,\"driveBootId\":%lu}", (unsigned long)millis(), (unsigned long)driveBootId);
+  char response[256];
+  const auto motorSignal = motorController.signalStatus();
+  snprintf(response, sizeof(response), "{\"ok\":true,\"uptimeMs\":%lu,\"driveBootId\":%lu,\"motorGPIO\":%u,\"motorPending\":%s,\"motorCommandAgeMs\":%lu,\"motorLeaseMs\":%lu}",
+    (unsigned long)millis(), (unsigned long)driveBootId, static_cast<unsigned int>(motorSignal.gpioLevels),
+    motorSignal.pending ? "true" : "false", (unsigned long)motorSignal.commandAgeMs, (unsigned long)motorSignal.leaseMs);
   server.send(200, "application/json", response);
 }
 

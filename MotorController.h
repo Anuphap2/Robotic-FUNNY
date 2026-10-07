@@ -13,24 +13,44 @@ inline bool motorLeaseExpired(uint32_t now, uint32_t issued, uint32_t lease) {
 class MotorController {
 public:
   enum Direction { STOPPED, FORWARD, BACKWARD, LEFT, RIGHT, SPIN };
+  struct SignalStatus {
+    uint8_t gpioLevels;
+    bool pending;
+    uint32_t commandAgeMs, leaseMs;
+  };
 
   void begin() {
     pinMode(PIN_A1A, OUTPUT); pinMode(PIN_A1B, OUTPUT);
     pinMode(PIN_B1A, OUTPUT); pinMode(PIN_B1B, OUTPUT);
     stop();
     applyConfig();
+    if (_timerReady) return;
     esp_timer_create_args_t args = {};
     args.callback = timerTick;
     args.arg = this;
     args.dispatch_method = ESP_TIMER_TASK;
     args.name = "motor-guard";
     args.skip_unhandled_events = true;
-    if (esp_timer_create(&args, &_watchdog) == ESP_OK) {
-      _timerReady = esp_timer_start_periodic(_watchdog, 2000) == ESP_OK;
-    }
+    if (!_watchdog) _initError = esp_timer_create(&args, &_watchdog);
+    if (_watchdog) _initError = esp_timer_start_periodic(_watchdog, 2000);
+    _timerReady = _initError == ESP_OK;
+    Serial.printf("[MOTOR] enabled=%d watchdog=%d init=%s\n", _enabled, _timerReady, esp_err_to_name(_initError));
   }
 
   bool ready() const { return _timerReady; }
+  const char* initError() const { return esp_err_to_name(_initError); }
+
+  SignalStatus signalStatus() const {
+    portENTER_CRITICAL(&_mux);
+    // Read the logic level at each original GPIO, not motor voltage or RPM.
+    const uint8_t levels = gpio_get_level(static_cast<gpio_num_t>(PIN_A1A)) |
+      (gpio_get_level(static_cast<gpio_num_t>(PIN_A1B)) << 1) |
+      (gpio_get_level(static_cast<gpio_num_t>(PIN_B1A)) << 2) |
+      (gpio_get_level(static_cast<gpio_num_t>(PIN_B1B)) << 3);
+    SignalStatus status{levels, _pending != STOPPED, millis() - _lastCommandTime, _lease};
+    portEXIT_CRITICAL(&_mux);
+    return status;
+  }
 
   void applyConfig() {
     portENTER_CRITICAL(&_mux);
@@ -81,6 +101,8 @@ public:
       request(LEFT);
     } else if (leftSpeed > 0 && rightSpeed < 0) {
       request(RIGHT);
+    } else {
+      stop(); // A one-wheel request must not leave an earlier two-wheel drive running.
     }
   }
 
@@ -142,6 +164,7 @@ private:
   bool _enabled = false, _leftReverse = false, _rightReverse = false, _timerReady = false;
   int8_t _pinA1A = -1, _pinA1B = -1, _pinB1A = -1, _pinB1B = -1;
   esp_timer_handle_t _watchdog = nullptr;
+  esp_err_t _initError = ESP_ERR_INVALID_STATE;
   mutable portMUX_TYPE _mux = portMUX_INITIALIZER_UNLOCKED;
 
   static void timerTick(void* arg) { static_cast<MotorController*>(arg)->onTimerTick(); }
