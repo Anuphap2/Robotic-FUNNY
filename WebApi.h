@@ -1,6 +1,7 @@
 #ifndef WEB_API_H
 #define WEB_API_H
 #include <WebServer.h>
+#include <sys/socket.h>
 #include "RuntimeConfig.h"
 
 // ESP32 core 3.3.12 raw-body callbacks let us bound POST storage before the
@@ -8,6 +9,33 @@
 class RobotWebServer : public WebServer {
 public:
   explicit RobotWebServer(int port) : WebServer(port) {}
+  // The dashboard has no streaming/SSE handlers or middleware. Avoid the stock
+  // five-second idle connection wait, and use short stream idle timeouts.
+  void handleClient() override {
+    if (_currentStatus == HC_NONE) {
+      _currentClient = _server.accept();
+      if (!_currentClient) return;
+      _currentClient.setNoDelay(true);
+      _currentClient.setTimeout(100);
+      _currentStatus = HC_WAIT_READ;
+      _statusChange = millis();
+    }
+    if (_currentClient.connected() && !_currentClient.available() && millis() - _statusChange < 150) return;
+    if (_currentClient.connected() && _currentClient.available()) {
+      _writing = false;
+      if (_parseRequest(_currentClient)) {
+        _writing = false;
+        _contentLength = CONTENT_LENGTH_NOT_SET;
+        _responseCode = 0;
+        _clearResponseHeaders();
+        _handleRequest();
+      }
+    }
+    _currentClient.stop();
+    _currentClient = NetworkClient();
+    _currentStatus = HC_NONE;
+    _currentUpload.reset(); _currentRaw.reset();
+  }
   void receiveBody() {
     if (hasUpload()) { rejectBody(415, "form_encoding_required"); return; }
     HTTPRaw& body = raw();
@@ -36,7 +64,27 @@ public:
     } else if (body.status == RAW_ABORTED) _bodyReady = false;
   }
   bool bodyReady() const { return _bodyReady; }
+protected:
+  // NetworkClient's stock write can retry for seconds. Bound the complete
+  // response instead, including chunked schema/catalog and the flash HTML.
+  size_t _currentClientWrite(const char* data, size_t length) override {
+    if (!_writing) { _writeStarted = millis(); _writing = true; }
+    size_t sent = 0;
+    while (sent < length && _currentClient.connected() && millis() - _writeStarted < 350) {
+      int count = ::send(_currentClient.fd(), data + sent, length - sent, MSG_DONTWAIT);
+      if (count > 0) sent += count;
+      else if (count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) yield();
+      else break;
+    }
+    if (sent != length) _currentClient.stop();
+    return sent;
+  }
+  size_t _currentClientWrite_P(PGM_P data, size_t length) override {
+    return _currentClientWrite(data, length);
+  }
 private:
+  uint32_t _writeStarted = 0;
+  bool _writing = false;
   static constexpr size_t BODY_LIMIT = 2048;
   char _body[BODY_LIMIT + 1] = {};
   size_t _bodySize = 0;

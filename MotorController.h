@@ -97,13 +97,13 @@ public:
     return request(FORWARD, constrain(leaseMs, 150UL, 600UL));
   }
 
-  bool handleCommand(const String& cmd) {
+  bool handleCommand(const String& cmd, uint32_t lease = 0) {
     if (cmd == "stop") { stop(); return true; }
-    if (cmd == "forward") { moveForward(); return true; }
-    if (cmd == "backward") { moveBackward(); return true; }
-    if (cmd == "left") { turnLeft(); return true; }
-    if (cmd == "right") { turnRight(); return true; }
-    if (cmd == "spin") { spinDance(); return true; }
+    if (cmd == "forward") return request(FORWARD, lease);
+    if (cmd == "backward") return request(BACKWARD, lease);
+    if (cmd == "left") return request(LEFT, lease);
+    if (cmd == "right") return request(RIGHT, lease);
+    if (cmd == "spin") return request(SPIN, lease);
     return false;
   }
 

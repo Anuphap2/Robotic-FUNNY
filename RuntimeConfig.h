@@ -10,7 +10,7 @@
 // bounded integers; one schema drives validation, defaults and the web form.
 #define ROBOT_CONFIG_FIELDS(X) \
  X(MOTOR_ENABLED,"motor_enabled","เปิดใช้งานมอเตอร์","motor",0,1,1,"bool","ปิดแล้วทุกคำสั่งขับเคลื่อนจะถูกปฏิเสธ") \
- X(MOTOR_TIMEOUT,"motor_timeout_ms","เวลาหยุดเมื่อขาดคำสั่ง","motor",300,5000,2000,"ms","Watchdog เปิดเสมอ ขณะกดปุ่มเว็บจะส่งคำสั่งซ้ำทุก 150 ms") \
+ X(MOTOR_TIMEOUT,"motor_timeout_ms","เวลาหยุดเมื่อขาดคำสั่ง","motor",300,5000,2000,"ms","Watchdog เปิดเสมอ เว็บส่งทุก 100 ms และตัดเมื่อคำสั่งสดขาดหายไม่เกิน 400 ms หรือตามค่านี้ถ้าสั้นกว่า") \
  X(MOTOR_LEFT_REVERSE,"motor_left_reverse","กลับทิศล้อซ้าย","motor",0,1,0,"bool","เปลี่ยนทิศทางทางซอฟต์แวร์โดยไม่เปลี่ยน pin") \
  X(MOTOR_RIGHT_REVERSE,"motor_right_reverse","กลับทิศล้อขวา","motor",0,1,0,"bool","ใช้แก้ล้อหมุนกลับด้าน") \
  X(SERVO_ENABLED,"servo_enabled","เปิดใช้งานเซอร์โว","servo",0,1,1,"bool","ปิดแล้วปล่อย PWM ทั้งสามตัว เซอร์โวจะไม่ยึดตำแหน่ง") \

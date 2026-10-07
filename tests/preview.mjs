@@ -10,7 +10,7 @@ const html = read('WebUI.h').split('R"rawliteral(')[1].split(')rawliteral"')[0];
 const schema = [...read('RuntimeConfig.h').matchAll(/X\(\w+,"([^"]+)","([^"]+)","([^"]+)",(-?\d+),(-?\d+),(-?\d+),"([^"]+)","([^"]+)"\)/g)]
   .map(([,key,label,group,min,max,def,unit,hint]) => ({key,label,group,min:+min,max:+max,default:+def,unit,hint}));
 if (schema.length !== 51 || new Set(schema.map(s=>s.key)).size !== 51) throw Error('Invalid schema fixture');
-const settings = {revision:0,version:'2.3.1',storage:'defaults',schemaVersion:2,
+const settings = {revision:0,version:'2.3.2',storage:'defaults',schemaVersion:2,
   values:Object.fromEntries(schema.map(s=>[s.key,s.default])), schema,
   pins:{'OLED SDA':21,'OLED SCL':22,'Ultrasonic TRIG':5,'Ultrasonic ECHO':17,'Buzzer':25,'Microphone AO':34,'Head servo':18,'Left arm servo':19,'Right arm servo':23,'Motor A1A':26,'Motor A1B':27,'Motor B1A':14,'Motor B1B':12},oledAddress:60};
 const catalog = {
@@ -40,16 +40,17 @@ function automaticView(){
   return {...idle,...stages[Math.floor((Date.now()-automaticStarted)/1800)%stages.length]};
 }
 const actions=[];
+const fixtureStarted=Date.now();
 createServer(async (req,res)=>{
   const url=new URL(req.url,'http://127.0.0.1');
-  const send=(status,data)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
+  const send=(status,data)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({...data,uptimeMs:1234567+Date.now()-fixtureStarted,driveBootId:55}));};
   if(url.pathname==='/'){res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end(html);return;}
   if(url.pathname==='/responsive-preview'){
     const width=Math.max(320,Math.min(1400,Number(url.searchParams.get('width'))||375));
     res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});
     res.end(`<html><body style="margin:0;background:#253149"><iframe title="Robot preview ${width}px" src="/" style="width:${width}px;height:100vh;border:0;display:block;margin:auto"></iframe></body></html>`);return;
   }
-  if(url.pathname==='/telemetry')return send(200,{vol:42,peak:118,distanceAgeMs:22,baseline:2048,calibrating:false,...automaticView(),mode,face:'normal',timbre,isPlaying:playing,heapFree:178240,heapMin:161300,heapLargest:145800,uptimeMs:1234567,maxLoopUs:13300,oledReady:true,servoReady:true,audioReady:true,motorReady:true,rssi:-55,networkMode:'station',ip:'192.168.1.42',version:'2.3.1',revision:settings.revision,pollMs:settings.values.telemetry_interval_ms});
+  if(url.pathname==='/telemetry')return send(200,{vol:42,peak:118,distanceAgeMs:22,baseline:2048,calibrating:false,...automaticView(),mode,face:'normal',timbre,isPlaying:playing,heapFree:178240,heapMin:161300,heapLargest:145800,uptimeMs:1234567,maxLoopUs:13300,oledReady:true,servoReady:true,audioReady:true,motorReady:true,rssi:-55,networkMode:'station',ip:'192.168.1.42',version:'2.3.2',revision:settings.revision,pollMs:settings.values.telemetry_interval_ms});
   if(url.pathname==='/api/catalog')return send(200,catalog);
   if(url.pathname==='/api/config'&&req.method==='GET')return send(200,settings);
   if(req.method==='POST'){

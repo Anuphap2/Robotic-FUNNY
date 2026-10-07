@@ -87,18 +87,6 @@ test('v2 import validates the complete draft and bounded request fits the server
   const maximum=Object.fromEntries(schema.map(s=>[s.key,Math.abs(s.min)>s.max?s.min:s.max]));
   assert.ok(new URLSearchParams({revision:2147483647,...maximum}).toString().length<=2048);
 });
-test('closing an idle dashboard preserves autonomy; active manual driving sends a stop',()=>{
-  const exitSource=source.slice(source.indexOf('function handlePageExit('),source.indexOf("window.addEventListener('blur'"));
-  for(const [drive,driveBusy,expectedStops] of [[null,false,0],['forward',false,1],[null,true,1]]){
-    const stops=[];let releases=0;
-    const exit=runInNewContext(exitSource+'; handlePageExit',{
-      drive,driveBusy,releaseDrive:()=>releases++,URLSearchParams,
-      fetch:(path,options)=>{stops.push({path,options});return Promise.resolve();}
-    });
-    exit();assert.equal(releases,1);assert.equal(stops.length,expectedStops);
-    if(expectedStops){assert.equal(stops[0].options.keepalive,true);assert.equal(stops[0].options.body.get('cmd'),'stop');}
-  }
-});
 test('Interactive starts with one mode command and has no behavior or target-confirmation controls',()=>{
   assert.ok(!source.includes('id="interactiveChoice"'));
   assert.ok(!source.includes('id="confirmTarget"'));

@@ -9,12 +9,16 @@
 #include "Config.h"
 #include "RuntimeConfig.h"
 #include "WebApi.h"
+#include "ManualDriveGuard.h"
+#include <esp_random.h>
 #include <esp_heap_caps.h>
 
 RobotSettings robotSettings;
 ConfigStore configStore;
-const char* const FIRMWARE_VERSION = "2.3.1";
+const char* const FIRMWARE_VERSION = "2.3.2";
 uint32_t maxLoopUs = 0;
+uint32_t driveBootId = 0;
+ManualDriveGuard manualDriveGuard;
 #include "SongSystem.h"
 #include "FaceSystem.h"
 #include "MotionSystem.h"
@@ -46,8 +50,8 @@ void handleRoot() {
 
 void sendError(int status, const char* code) {
   server.sendHeader("Cache-Control", "no-store");
-  char json[160];
-  snprintf(json, sizeof(json), "{\"ok\":false,\"error\":\"%s\"}", code);
+  char json[224];
+  snprintf(json, sizeof(json), "{\"ok\":false,\"error\":\"%s\",\"uptimeMs\":%lu,\"driveBootId\":%lu}", code, (unsigned long)millis(), (unsigned long)driveBootId);
   server.send(status, "application/json", json);
 }
 
@@ -62,6 +66,7 @@ bool allowMutation() {
 }
 
 void stopAll() {
+  manualDriveGuard.cancelAll(millis());
   motorController.stop(); songPlayer.stop(); motionPlayer.freeze();
   recreationEngine.setMode(MODE_MANUAL, false);
 }
@@ -72,7 +77,7 @@ void handleTelemetry() {
     "{\"vol\":%d,\"peak\":%d,\"dist\":%.1f,\"distanceValid\":%s,\"distanceAgeMs\":%lu,"
     "\"baseline\":%d,\"calibrating\":%s,\"mode\":\"%s\",\"dir\":\"%s\",\"face\":\"%s\","
     "\"timbre\":\"%s\",\"isPlaying\":%s,\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargest\":%lu,"
-    "\"uptimeMs\":%lu,\"maxLoopUs\":%lu,\"oledReady\":%s,\"servoReady\":%s,\"audioReady\":%s,\"motorReady\":%s,"
+    "\"uptimeMs\":%lu,\"driveBootId\":%lu,\"maxLoopUs\":%lu,\"oledReady\":%s,\"servoReady\":%s,\"audioReady\":%s,\"motorReady\":%s,"
     "\"rssi\":%d,\"networkMode\":\"%s\",\"ip\":\"%s\",\"version\":\"%s\",\"revision\":%lu,\"pollMs\":%ld,\"interactive\":\"%s\",\"targetClass\":\"%s\",\"decision\":\"%s\",\"behavior\":\"%s\",\"targetLocked\":%s,\"movingVotes\":%u}",
     sensorManager.volume(), sensorManager.peakVolume(), sensorManager.distance(),
     sensorManager.distanceValid() ? "true" : "false", (unsigned long)sensorManager.distanceAge(),
@@ -81,7 +86,7 @@ void handleTelemetry() {
     songPlayer.timbreName(), songPlayer.isPlaying() ? "true" : "false",
     (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getMinFreeHeap(),
     (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
-    (unsigned long)millis(), (unsigned long)maxLoopUs,
+    (unsigned long)millis(), (unsigned long)driveBootId, (unsigned long)maxLoopUs,
     faceEngine.ready() ? "true" : "false", motionPlayer.ready() ? "true" : "false", songPlayer.hardwareOK() ? "true" : "false",
     motorController.ready() ? "true" : "false",
     WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0,
@@ -206,6 +211,38 @@ void handleSaveConfig() {
   server.send(200, "application/json", json);
 }
 
+bool parseDriveUint(const char* key, uint32_t& value) {
+  if (!server.hasArg(key)) return false;
+  String text = server.arg(key);
+  if (!text.length() || text.length() > 10) return false;
+  uint64_t parsed = 0;
+  for (size_t i = 0; i < text.length(); ++i) {
+    if (text[i] < '0' || text[i] > '9') return false;
+    parsed = parsed * 10 + (text[i] - '0');
+    if (parsed > UINT32_MAX) return false;
+  }
+  value = static_cast<uint32_t>(parsed); return true;
+}
+
+bool handleWebMotor(const String& cmd) {
+  if (cmd != "stop" && cmd != "forward" && cmd != "backward" && cmd != "left" && cmd != "right" && cmd != "spin") return false;
+  uint32_t boot, client, sequence, issued;
+  uint32_t now = millis();
+  // Unsequenced stop remains available to old clients. Movement requires the
+  // current boot token, a per-page sequence and a fresh device-clock timestamp.
+  if (cmd == "stop" && !server.hasArg("seq")) {
+    manualDriveGuard.cancelAll(now); motorController.stop();
+    if (recreationEngine.mode() != MODE_MANUAL) recreationEngine.setMode(MODE_MANUAL, false);
+    return true;
+  }
+  if (!parseDriveUint("boot", boot) || boot != driveBootId ||
+      !parseDriveUint("client", client) || !parseDriveUint("seq", sequence) ||
+      !parseDriveUint("issued", issued) || !manualDriveGuard.accept(now, client, sequence, issued, cmd == "stop")) return false;
+  if (cmd == "stop") manualDriveGuard.cancelAll(now);
+  if (recreationEngine.mode() != MODE_MANUAL) recreationEngine.setMode(MODE_MANUAL, false);
+  return motorController.handleCommand(cmd, cmd == "stop" ? 0 : manualDriveRemaining(now, issued));
+}
+
 void handleAction() {
   if (!allowMutation()) return;
   if (!server.hasArg("cmd")) { sendError(400, "cmd_required"); return; }
@@ -218,8 +255,8 @@ void handleAction() {
     if (!robotSettings.get(MIC_ENABLED)) { sendError(409, "mic_disabled"); return; }
     stopAll(); sensorManager.startCalibration(); ok = true;
   } else if (type == "motor") {
-    if (recreationEngine.mode() != MODE_MANUAL) recreationEngine.setMode(MODE_MANUAL, false);
-    ok = motorController.handleCommand(cmd);
+    ok = handleWebMotor(cmd);
+    if (!ok) { sendError(409, "drive_rejected_refresh"); return; }
   }
   else if (type == "mode") {
     if (cmd == "manual") { recreationEngine.setMode(MODE_MANUAL); ok = true; }
@@ -256,20 +293,30 @@ void handleAction() {
     }
   } else if (type.length() == 0) {
     if (cmd == "stop_all") { stopAll(); ok = true; }
+    else if (cmd == "stop" || cmd == "forward" || cmd == "backward" || cmd == "left" || cmd == "right" || cmd == "spin") {
+      ok = handleWebMotor(cmd);
+      if (!ok) { sendError(409, "drive_rejected_refresh"); return; }
+    }
     else {
       if (recreationEngine.mode() != MODE_MANUAL) recreationEngine.setMode(MODE_MANUAL, false);
-      ok = motorController.handleCommand(cmd) || faceEngine.setFace(cmd.c_str()) || songPlayer.playById(cmd.c_str()) || motionPlayer.playById(cmd.c_str());
+      ok = faceEngine.setFace(cmd.c_str()) || songPlayer.playById(cmd.c_str()) || motionPlayer.playById(cmd.c_str());
     }
   }
   if (!ok) { sendError(422, "unknown_command_or_hardware_disabled"); return; }
+  if (type == "mode" || type == "interactive" || type == "tracking" || type == "showcase" || type == "motion" || type == "servo") {
+    manualDriveGuard.cancelAll(millis());
+  }
   server.sendHeader("Cache-Control", "no-store");
-  server.send(200, "application/json", "{\"ok\":true}");
+  char response[112];
+  snprintf(response, sizeof(response), "{\"ok\":true,\"uptimeMs\":%lu,\"driveBootId\":%lu}", (unsigned long)millis(), (unsigned long)driveBootId);
+  server.send(200, "application/json", response);
 }
 
 // ============================================================================
 // SYSTEM SETUP
 // ============================================================================
 void setup() {
+  driveBootId = (esp_random() & 0x7FFFFFFF) | 1;
   Serial.begin(115200);
   delay(100);
   Serial.println("\n=============================================");
@@ -294,6 +341,7 @@ void setup() {
   // Connect to Wi-Fi with timeout and fallback to SoftAP
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  WiFi.setSleep(false); // Low-latency control; trades additional radio power for prompt reception.
   Serial.print("Connecting to Wi-Fi: ");
   Serial.print(WIFI_SSID);
 

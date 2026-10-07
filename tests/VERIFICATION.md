@@ -1,116 +1,74 @@
-# Verification — firmware 2.3.1
+# Verification — firmware 2.3.2
 
 Checked on 7 October 2026 (Asia/Bangkok). No firmware was uploaded and no
-physical robot was driven during these checks.
+physical robot was driven. Hardware observations remain supplied by the user.
 
-## Final ESP32 build
+## Manual control regressions
 
-Final source compiled successfully with `--warnings all`, FQBN
-`esp32:esp32:esp32`, ESP32 core 3.3.12 and the libraries listed in README.
-The final build copy matches all changed production sources (excluding the
-`#line` markers inserted by Arduino).
+Node runs the actual dashboard functions extracted from WebUI.h:
 
-- Program storage: 1,082,798 / 1,310,720 bytes (82%).
-- Static RAM: 52,784 / 327,680 bytes (16%); 274,896 bytes remain before runtime
-  allocations. This is not a measurement of running-board heap. Static RAM
-  increased by 16 bytes from 2.3.0.
-- Encounter, cruise, filter and retry storage is fixed capacity, with no
-  additional song buffers or unbounded history.
-- Build reported existing ESP32Servo unused-variable warnings; no diagnostics
-  were reported from project sources.
-- All 52 production assertions also passed an independent syntax-only compile
-  with the ESP32 C++ compiler.
-- `Config.h` matches original commit `0192c93`; GPIO assignments are unchanged.
-- `SongSystem.h` matches `a20d12c`; 443 notes and all 19 tracks retain the earlier
-  reduction to four bytes per note (1,772 bytes of note tables in Flash).
+- 13 existing configuration/telemetry tests: 51 fields, bounds, types, servo
+  limits, distances, unknown/GPIO fields, blank values, v1/v2 import compatibility,
+  and Interactive controls/status.
+- 9 manual-control tests: stop while a forward request is outstanding, release
+  abort propagation, heartbeat timing including network wait, no parallel drive
+  queue, direction change waiting for stop acknowledgement, late old completion,
+  old button release, failure without automatic movement retry, idle/active page
+  exit, telemetry cancellation, offline stop, reboot/clock ordering, and mode
+  change waiting for the outstanding stop.
+- Dashboard and preview JavaScript syntax checked.
 
-## Production movement and decision regressions
+Command: node --test tests/config-ui.test.mjs tests/manual-drive-ui.test.mjs
+Result: 22 passed, 0 failed.
 
-The firmware contains 52 static assertions executing its production functions.
-These checks compile away; they do not allocate runtime test buffers or tasks.
+Ten compile-time assertions in manual-drive-policy.cpp execute the production
+ManualDriveGuard.h functions. Checked with the installed ESP32 C++ compiler,
+C++17, -fsyntax-only. Covers lease age/expiry/future timestamps, millis rollover,
+late and duplicate sequences after a stop, global cancellation, bounded four-page
+capacity, slot reuse, invalid packets not poisoning a sequence, and cancellation
+across rollover. Passed. No test buffers are linked into the firmware.
 
-`AutonomousDrive.h` verifies:
+## ESP32 build
 
-- Leases derived from sonar cadence, the configured minimum and the 600 ms cap.
-- Three seconds of uninterrupted clear-path drive with 29 new-echo renewals;
-  repeated loop ticks do not renew the lease or stop the drive.
-- Timer expiration on schedule when fresh echoes cease, even if the last range
-  value itself still looks clear.
-- Continuous following without exploration's periodic observation stops.
-- Median filtering and a follow stop threshold distinct from the start threshold.
-- One far outlier withholds renewal without losing the target; two distinct far
-  readings release it. Repeated ticks over the same echo are not extra votes.
-- Immediate raw-close, invalid-echo and obstacle braking, bypassing filtering.
-- Explicit cruise cancellation prevents subsequent echo-triggered renewal.
-- Avoidance cooldown, alternate-side retry and a requirement for fresh evidence.
-  A retry direction is kept for three bounded batches instead of undoing the
-  previous turn at every batch boundary and revisiting only the same sector.
-- Cruise, watchdog and retry deadlines across millis() rollover.
-- Old capture ages cannot authorize renewal, including long sonar intervals.
-- Narrow saved clearance configurations still retain an 8 cm start/stop gap.
+Final source compiled successfully with esp32:esp32:esp32, ESP32 core 3.3.12,
+--warnings all, and installed libraries. All changed production files match the
+build copy after excluding Arduino-generated declarations and line markers.
 
-`DecisionTree.h` verifies the existing range classifier, stationary movement
-votes, fixed six-reading window, automatic acquisition/follow/loss/recovery,
-priority stops and bounded turn batches. An untracked stationary obstacle is
-avoided instead of receiving a long greeting gesture.
+- Program: 1,086,406 / 1,310,720 bytes (82%).
+- Static RAM: 52,824 / 327,680 bytes (16%); 274,856 remain before runtime allocation.
+- No project-source diagnostics. Earlier clean builds reported only the existing
+  ESP32Servo unused-variable warnings; the final incremental build passed.
+- The verified working tree includes the user's uncommitted GPIO refresh,
+  obstacle threshold and debounce changes. Those changes were preserved and
+  intentionally not added to this fix's commit.
 
-Its additional integrated 12-second clear-path trace executes the actual
-stationary window, classifier, policy, cruise controller and watchdog predicate.
-At the default 100 ms echo cadence it starts cruising four times and spends at
-least 85% of the trace walking. Moving samples never enter the stationary target
-window. This is an ideal software trace, not a measurement on a physical robot.
+## Scope and hardware limits
 
-## Greeting and encounter regressions
+MotorController's command handler now reports rejected movement truthfully and
+passes the web's remaining lease to the independent motor timer. The user's
+existing direct digital drive and repeated GPIO writes were preserved. No PWM
+speed calibration or physical wheel feedback was introduced. setSpeed/setTrim
+remain no-ops in this baseline; equal command voltage cannot guarantee equal RPM.
 
-Seven `EncounterControl.h` assertions execute the production encounter state:
-isolated far spikes and near/far jitter over 28 seconds cannot repeat greetings;
-continuous fresh departure and a ten-second minimum allow one new encounter;
-turning/following, no echo, repeated frames and a stalled loop cannot prove
-departure; gesture completion and a 2.5-second timeout request routing exactly
-once; holding a close target is finite; clocks may roll over safely.
+All 13 pin assignments match the starting revision; Config.h and concurrent
+RecreationEngine.h edits are outside this fix and are left uncommitted. The motor
+file's pre-existing GPIO refresh changes are also left uncommitted; only the new
+command handler is included in this commit. Existing config keys, order, numeric
+bounds/defaults and NVS schema remain compatible. No reset or config erase.
 
-Six additional `DecisionTree.h` assertions verify that post-greeting movement
-does not reacquire the nearby target, routing requires clearance outside the
-encounter zone, and close/invalid data retain stop priority. The integrated
-production sequence greets -> finishes -> rejects near reacquisition -> turns
--> finds a clear path -> resumes exploration without permitting another greeting.
-The engine keeps the encounter latch across invalid readings and preserves the
-new-path intent while collecting fresh stationary measurements.
+HTTP is still served cooperatively through the ESP32 core parser. Idle connection
+wait is shortened to 150 ms, stream idle timeout to 100 ms, and response sending
+has a 350 ms budget. This is not a hard total parse deadline for all possible
+requests. The motor timer and timestamp-based lease, rather than browser abort,
+provide the software cutoff during a stalled request. Wi-Fi modem sleep is off.
 
-## Dashboard and compatibility
+A real-board check is still required: press/release/stop under weak Wi-Fi,
+changing direction/mode, page closure, router loss, actual lease cutoff and
+braking distance, root/config/catalog loading, input/output voltages under load,
+and the powered-off motor-output swap described in README. Motor readiness is
+software readiness; it does not measure RPM, motor current, or driver voltage.
 
-`node --test tests/config-ui.test.mjs`: 14 tests covering actual dashboard code:
-field bounds/types, servo/proximity/autonomy constraints, invalid/unknown/GPIO
-fields, blank inputs, v1 import preserving 42 old values, bounded v2 imports,
-one-command Interactive start, idle page closure, manual drive exit stop,
-automatic telemetry and continuous-drive/observation/avoidance labels, plus
-post-greeting route finding with the target lock released.
-
-Dashboard JavaScript syntax and `git diff --check` passed.
-The 51 saved field keys, order, numeric bounds/defaults and NVS schema v2 remain
-compatible with 2.3.0. The greeting cooldown hint now explains encounter rearming.
-The preceding release's timing semantics are retained:
-`auto_pulse_ms` is a minimum forward lease, `auto_observe_ms` controls periodic
-observation cadence and avoidance retry cooldown, and `auto_turn_limit` bounds
-each scan batch. No saved configuration is erased or rewritten automatically.
-
-`tests/preview.mjs` remains a UI-only fixture with timed example telemetry. It
-does not execute production decision logic or motors. Browser checks from 2.2.0
-are historical; the movement checks above are independent of that fixture.
-
-## Hardware verification still required
-
-Test with the actual circuit on flat ground: continuous drive and actual braking
-distance, front-echo quality while moving, pulse/lease cutoff during HTTP stalls,
-old ISR captures after a stall, sonar timeout/no echo, follow deadband and single
-far spikes, repeated far readings and reacquisition, periodic stationary scans,
-alternate-side avoidance, close-stop priority, manual override, emergency stop,
-one greeting for a real person while the range jitters, no-echo interruptions,
-leaving and returning, route finding after a greeting, disabled/slow servos,
-near-target hold timeout, and sustained heap use. Existing NVS migration/persistence requires
-reboot checks. Defaults retain a 100 ms sonar interval; use 60–200 ms for smooth
-cruising. Very long saved intervals can still cause watchdog stops between echoes.
-
-Range-only following cannot prove human identity or see side/rear/floor edges.
-Continuous motion remains subject to usable new echoes and the independent
-watchdog; it does not authorize blind movement when sensor data is missing.
+tests/preview.mjs is a UI fixture only, with compatible boot/time metadata. It
+does not execute the production guard, confirm physical movement, or measure
+ESP32 network latency. Older autonomy verification is historical in Git; it is
+not evidence for the user's subsequently changed autonomy engine.
