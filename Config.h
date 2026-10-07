@@ -42,18 +42,18 @@ const int PIN_B1B = 12; // Motor Right B
 #define MOTOR_RIGHT_TRIM_PCT   100  // กำลังล้อขวา (%) ค่าปกติ 100
 #endif
 
-// Speed Profile for Heavy Chassis Robot (ขับเคลื่อน 100% เท่ากัน ป้องกันล้อติดขัดจากน้ำหนักตัวถัง)
+// Speed Profile for Heavy Chassis Robot (แรงขับ 80% - 100% เท่านั้น ห้ามต่ำกว่า 80%)
 #ifndef MOTOR_MIN_SPEED_PCT
-#define MOTOR_MIN_SPEED_PCT    80   // ขีดจำกัดความเร็วต่ำสุด (ห้ามต่ำกว่า 80% เพื่อรักษาแรงบิดขับเคลื่อน)
+#define MOTOR_MIN_SPEED_PCT    80   // ขีดจำกัดความเร็วต่ำสุด (ล็อกไว้ที่ 80% ห้ามต่ำกว่านี้เด็ดขาด)
 #endif
 #ifndef SPEED_ROAM_FORWARD
-#define SPEED_ROAM_FORWARD    100   // เดินหน้าสำรวจเต็มกำลัง 100% (มอเตอร์ 100% เท่ากัน ขับเคลื่อนบอดี้หนัก)
+#define SPEED_ROAM_FORWARD    100   // เดินหน้าสำรวจเต็มกำลัง 100% (High Torque สำหรับตัวถังหนัก)
 #endif
 #ifndef SPEED_ROAM_TURN
 #define SPEED_ROAM_TURN       100   // เลี้ยวหลบสิ่งกีดขวาง 100% (Skid-steer หมุนตัวได้อย่างคล่องตัว ไม่ติดขัด)
 #endif
 #ifndef SPEED_REVERSE_PCT
-#define SPEED_REVERSE_PCT      90   // ถอยหลังเว้นระยะเมื่อจ่อกำแพงใกล้มาก
+#define SPEED_REVERSE_PCT     100   // ถอยหลังเว้นระยะ 100% เต็มกำลัง (ไม่ให้อืด ไม่ลดกำลัง)
 #endif
 #ifndef SPEED_FOLLOW_SLOW
 #define SPEED_FOLLOW_SLOW     100

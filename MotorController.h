@@ -40,8 +40,8 @@ public:
   }
   void setTrim(uint8_t leftPct, uint8_t rightPct) {
     portENTER_CRITICAL(&_mux);
-    _leftTrim = constrain(leftPct, 10, 100);
-    _rightTrim = constrain(rightPct, 10, 100);
+    _leftTrim = constrain(leftPct, MOTOR_MIN_SPEED_PCT, 100);
+    _rightTrim = constrain(rightPct, MOTOR_MIN_SPEED_PCT, 100);
     portEXIT_CRITICAL(&_mux);
   }
   uint8_t leftTrim() const { return _leftTrim; }
@@ -49,14 +49,14 @@ public:
   void stop() {
     portENTER_CRITICAL(&_mux); stopLocked(); portEXIT_CRITICAL(&_mux);
   }
-  void moveForward() { request(FORWARD); }
-  void moveBackward() { request(BACKWARD); }
-  void turnLeft() { request(LEFT); }
-  void turnRight() { request(RIGHT); }
-  void spinDance() { request(SPIN); }
+  void moveForward() { moveForward(100); }
+  void moveBackward() { moveBackward(SPEED_REVERSE_PCT); }
+  void turnLeft() { turnLeft(SPEED_ROAM_TURN); }
+  void turnRight() { turnRight(SPEED_ROAM_TURN); }
+  void spinDance() { setSpeed(100); request(SPIN); }
   void stopMotors() { stop(); }
   void setSpeed(uint8_t pct) {
-    // บอดี้หุ่นยนต์มีน้ำหนักมาก ไม่ควรลด PWM ต่ำเกินไปเพื่อรักษาแรงบิด (Torque) ไม่ให้ล้อติดขัด
+    // บอดี้หุ่นยนต์มีน้ำหนักมาก ล็อกแรงขับไว้ที่ 80% - 100% เท่านั้น ห้ามต่ำกว่า 80%
     uint8_t s = constrain(pct, MOTOR_MIN_SPEED_PCT, 100);
     setTrim(s, s);
   }
@@ -68,16 +68,16 @@ public:
     if (leftSpeed == 0 && rightSpeed == 0) {
       stop();
     } else if (leftSpeed > 0 && rightSpeed > 0) {
-      setSpeed(max(leftSpeed, rightSpeed));
+      setSpeed(constrain(max(leftSpeed, rightSpeed), (int16_t)MOTOR_MIN_SPEED_PCT, (int16_t)100));
       request(FORWARD);
     } else if (leftSpeed < 0 && rightSpeed < 0) {
-      setSpeed(max((int16_t)(-leftSpeed), (int16_t)(-rightSpeed)));
+      setSpeed(constrain(max((int16_t)(-leftSpeed), (int16_t)(-rightSpeed)), (int16_t)MOTOR_MIN_SPEED_PCT, (int16_t)100));
       request(BACKWARD);
     } else if (leftSpeed < 0 && rightSpeed > 0) {
-      setSpeed(rightSpeed);
+      setSpeed(constrain((int16_t)rightSpeed, (int16_t)MOTOR_MIN_SPEED_PCT, (int16_t)100));
       request(LEFT);
     } else if (leftSpeed > 0 && rightSpeed < 0) {
-      setSpeed(leftSpeed);
+      setSpeed(constrain((int16_t)leftSpeed, (int16_t)MOTOR_MIN_SPEED_PCT, (int16_t)100));
       request(RIGHT);
     }
   }
@@ -85,20 +85,22 @@ public:
   // if the web server stalls. A pulse is issued once, never renewed in flight.
   bool pulse(Direction direction, uint32_t durationMs) {
     if (direction != FORWARD && direction != BACKWARD && direction != LEFT && direction != RIGHT) return false;
+    setSpeed(100);
     return request(direction, constrain(durationMs, 60UL, 300UL));
   }
   // Continuous forward drive: extending the SAME direction does not drop GPIOs
   // or repeat direction-switch dead time. Call only for a distinct usable echo.
   bool cruise(uint32_t leaseMs) {
+    setSpeed(100);
     return request(FORWARD, constrain(leaseMs, 150UL, 600UL));
   }
   bool handleCommand(const String& cmd) {
     if (cmd == "stop") { stop(); return true; }
-    if (cmd == "forward") return request(FORWARD);
-    if (cmd == "backward") return request(BACKWARD);
-    if (cmd == "left") return request(LEFT);
-    if (cmd == "right") return request(RIGHT);
-    if (cmd == "spin") return request(SPIN);
+    if (cmd == "forward") { moveForward(100); return true; }
+    if (cmd == "backward") { moveBackward(SPEED_REVERSE_PCT); return true; }
+    if (cmd == "left") { turnLeft(SPEED_ROAM_TURN); return true; }
+    if (cmd == "right") { turnRight(SPEED_ROAM_TURN); return true; }
+    if (cmd == "spin") { spinDance(); return true; }
     return false;
   }
   void update() {
@@ -133,8 +135,8 @@ private:
   uint32_t _timeout = 2000;
   uint32_t _lease = 2000;
   bool _enabled = false, _leftReverse = false, _rightReverse = false, _timerReady = false;
-  uint8_t _leftTrim = constrain(MOTOR_LEFT_TRIM_PCT, 10, 100);
-  uint8_t _rightTrim = constrain(MOTOR_RIGHT_TRIM_PCT, 10, 100);
+  uint8_t _leftTrim = constrain(MOTOR_LEFT_TRIM_PCT, MOTOR_MIN_SPEED_PCT, 100);
+  uint8_t _rightTrim = constrain(MOTOR_RIGHT_TRIM_PCT, MOTOR_MIN_SPEED_PCT, 100);
   uint8_t _accumL = 100, _accumR = 100;
   int8_t _pinA1A = -1, _pinA1B = -1, _pinB1A = -1, _pinB1B = -1;
   esp_timer_handle_t _watchdog = nullptr;
