@@ -224,11 +224,10 @@ void handleAction() {
   else if (type == "mode") {
     if (cmd == "manual") { recreationEngine.setMode(MODE_MANUAL); ok = true; }
     else if (cmd == "party" && robotSettings.get(MIC_ENABLED) && robotSettings.get(SERVO_ENABLED)) { recreationEngine.setMode(MODE_PARTY_BEAT); ok = true; }
-    else if (cmd == "interactive") ok = recreationEngine.startInteractive();
-  } else if (type == "interactive") {
-    // Old start commands are aliases for the unified automatic mode.
-    if (cmd == "start" || cmd == "greet" || cmd == "roam" || cmd == "follow") ok = recreationEngine.startInteractive();
-    else if (cmd == "stop") { stopAll(); ok = true; }
+    else if (cmd == "interactive" || cmd == "tracking" || cmd == "follow" || cmd == "follow_me") ok = recreationEngine.startInteractive();
+  } else if (type == "tracking" || type == "interactive") {
+    if (cmd == "start" || cmd == "follow" || cmd == "on" || cmd == "greet" || cmd == "roam") ok = recreationEngine.startInteractive();
+    else if (cmd == "stop" || cmd == "off") { stopAll(); ok = true; }
   } else if (type == "showcase") {
     String motion = server.hasArg("motion") ? server.arg("motion") : "dance";
     if (motion.length() <= 64) ok = recreationEngine.startShowcase(cmd.c_str(), motion.c_str());

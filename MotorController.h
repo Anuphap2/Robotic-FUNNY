@@ -22,7 +22,7 @@ public:
     args.name = "motor-guard";
     args.skip_unhandled_events = true;
     if (esp_timer_create(&args, &_watchdog) == ESP_OK) {
-      _timerReady = esp_timer_start_periodic(_watchdog, 5000) == ESP_OK;
+      _timerReady = esp_timer_start_periodic(_watchdog, 2000) == ESP_OK;
     }
   }
   bool ready() const { return _timerReady; }
@@ -35,6 +35,14 @@ public:
     _rightReverse = robotSettings.get(MOTOR_RIGHT_REVERSE);
     portEXIT_CRITICAL(&_mux);
   }
+  void setTrim(uint8_t leftPct, uint8_t rightPct) {
+    portENTER_CRITICAL(&_mux);
+    _leftTrim = constrain(leftPct, 10, 100);
+    _rightTrim = constrain(rightPct, 10, 100);
+    portEXIT_CRITICAL(&_mux);
+  }
+  uint8_t leftTrim() const { return _leftTrim; }
+  uint8_t rightTrim() const { return _rightTrim; }
   void stop() {
     portENTER_CRITICAL(&_mux); stopLocked(); portEXIT_CRITICAL(&_mux);
   }
@@ -43,10 +51,36 @@ public:
   void turnLeft() { request(LEFT); }
   void turnRight() { request(RIGHT); }
   void spinDance() { request(SPIN); }
+  void stopMotors() { stop(); }
+  void setSpeed(uint8_t pct) {
+    uint8_t s = constrain(pct, 10, 100);
+    setTrim(s, s);
+  }
+  void moveForward(uint8_t speed) { setSpeed(speed); request(FORWARD); }
+  void moveBackward(uint8_t speed) { setSpeed(speed); request(BACKWARD); }
+  void turnLeft(uint8_t speed) { setSpeed(speed); request(LEFT); }
+  void turnRight(uint8_t speed) { setSpeed(speed); request(RIGHT); }
+  void setMotor(int16_t leftSpeed, int16_t rightSpeed) {
+    if (leftSpeed == 0 && rightSpeed == 0) {
+      stop();
+    } else if (leftSpeed > 0 && rightSpeed > 0) {
+      setSpeed(max(leftSpeed, rightSpeed));
+      request(FORWARD);
+    } else if (leftSpeed < 0 && rightSpeed < 0) {
+      setSpeed(max((int16_t)(-leftSpeed), (int16_t)(-rightSpeed)));
+      request(BACKWARD);
+    } else if (leftSpeed < 0 && rightSpeed > 0) {
+      setSpeed(rightSpeed);
+      request(LEFT);
+    } else if (leftSpeed > 0 && rightSpeed < 0) {
+      setSpeed(leftSpeed);
+      request(RIGHT);
+    }
+  }
   // Autonomous pulses have their own short lease, enforced by the timer even
   // if the web server stalls. A pulse is issued once, never renewed in flight.
   bool pulse(Direction direction, uint32_t durationMs) {
-    if (direction != FORWARD && direction != LEFT && direction != RIGHT) return false;
+    if (direction != FORWARD && direction != BACKWARD && direction != LEFT && direction != RIGHT) return false;
     return request(direction, constrain(durationMs, 60UL, 300UL));
   }
   // Continuous forward drive: extending the SAME direction does not drop GPIOs
@@ -73,7 +107,9 @@ public:
       stopLocked(); portEXIT_CRITICAL(&_mux); return;
     }
     if (_pending != STOPPED && millis() - _switchTime >= 5) {
-      Direction next = _pending; _pending = STOPPED; drive(next);
+      Direction next = _pending; _pending = STOPPED; _dir = next;
+      _accumL = 100; _accumR = 100;
+      applyOutputsLocked(true, true);
     }
     portEXIT_CRITICAL(&_mux);
   }
@@ -93,15 +129,76 @@ private:
   uint32_t _timeout = 2000;
   uint32_t _lease = 2000;
   bool _enabled = false, _leftReverse = false, _rightReverse = false, _timerReady = false;
+  uint8_t _leftTrim = constrain(MOTOR_LEFT_TRIM_PCT, 10, 100);
+  uint8_t _rightTrim = constrain(MOTOR_RIGHT_TRIM_PCT, 10, 100);
+  uint8_t _accumL = 100, _accumR = 100;
+  int8_t _pinA1A = -1, _pinA1B = -1, _pinB1A = -1, _pinB1B = -1;
   esp_timer_handle_t _watchdog = nullptr;
   mutable portMUX_TYPE _mux = portMUX_INITIALIZER_UNLOCKED;
-  static void timerTick(void* arg) { static_cast<MotorController*>(arg)->update(); }
-  void stopLocked() { outputsLow(); _dir = STOPPED; _pending = STOPPED; }
-  void writePin(int pin, bool high) { gpio_set_level(static_cast<gpio_num_t>(pin), high ? 1 : 0); }
-  void outputsLow() {
-    writePin(PIN_A1A, false); writePin(PIN_A1B, false);
-    writePin(PIN_B1A, false); writePin(PIN_B1B, false);
+
+  static void timerTick(void* arg) { static_cast<MotorController*>(arg)->onTimerTick(); }
+
+  void onTimerTick() {
+    portENTER_CRITICAL(&_mux);
+    if (!_enabled ||
+        ((_dir != STOPPED || _pending != STOPPED) &&
+         motorLeaseExpired(millis(), _lastCommandTime, _lease))) {
+      stopLocked(); portEXIT_CRITICAL(&_mux); return;
+    }
+    if (_pending != STOPPED && millis() - _switchTime >= 5) {
+      Direction next = _pending; _pending = STOPPED; _dir = next;
+      _accumL = 100; _accumR = 100;
+      applyOutputsLocked(true, true);
+      portEXIT_CRITICAL(&_mux);
+      return;
+    }
+    if (_dir == STOPPED) {
+      outputsLow();
+      portEXIT_CRITICAL(&_mux);
+      return;
+    }
+
+    bool activeL = true;
+    if (_leftTrim < 100) {
+      _accumL += _leftTrim;
+      if (_accumL >= 100) { _accumL -= 100; activeL = true; }
+      else { activeL = false; }
+    }
+
+    bool activeR = true;
+    if (_rightTrim < 100) {
+      _accumR += _rightTrim;
+      if (_accumR >= 100) { _accumR -= 100; activeR = true; }
+      else { activeR = false; }
+    }
+
+    applyOutputsLocked(activeL, activeR);
+    portEXIT_CRITICAL(&_mux);
   }
+
+  void stopLocked() {
+    outputsLow();
+    _dir = STOPPED;
+    _pending = STOPPED;
+    _accumL = 100;
+    _accumR = 100;
+  }
+
+  void setPinCached(int pin, int8_t& current, bool high) {
+    int8_t desired = high ? 1 : 0;
+    if (current != desired) {
+      current = desired;
+      gpio_set_level(static_cast<gpio_num_t>(pin), desired);
+    }
+  }
+
+  void outputsLow() {
+    setPinCached(PIN_A1A, _pinA1A, false);
+    setPinCached(PIN_A1B, _pinA1B, false);
+    setPinCached(PIN_B1A, _pinB1A, false);
+    setPinCached(PIN_B1B, _pinB1B, false);
+  }
+
   bool request(Direction next, uint32_t lease = 0) {
     portENTER_CRITICAL(&_mux);
     if (!_enabled || !_timerReady) { portEXIT_CRITICAL(&_mux); return false; }
@@ -112,13 +209,28 @@ private:
     portEXIT_CRITICAL(&_mux);
     return true;
   }
-  void drive(Direction next) {
-    bool leftForward = next == FORWARD || next == RIGHT || next == SPIN;
-    bool rightForward = next == FORWARD || next == LEFT;
-    leftForward ^= _leftReverse; rightForward ^= _rightReverse;
-    writePin(PIN_A1A, leftForward); writePin(PIN_A1B, !leftForward);
-    writePin(PIN_B1A, rightForward); writePin(PIN_B1B, !rightForward);
-    _dir = next;
+
+  void applyOutputsLocked(bool activeL, bool activeR) {
+    bool leftForward = _dir == FORWARD || _dir == RIGHT || _dir == SPIN;
+    bool rightForward = _dir == FORWARD || _dir == LEFT;
+    leftForward ^= _leftReverse;
+    rightForward ^= _rightReverse;
+
+    if (activeL) {
+      setPinCached(PIN_A1A, _pinA1A, leftForward);
+      setPinCached(PIN_A1B, _pinA1B, !leftForward);
+    } else {
+      setPinCached(PIN_A1A, _pinA1A, false);
+      setPinCached(PIN_A1B, _pinA1B, false);
+    }
+
+    if (activeR) {
+      setPinCached(PIN_B1A, _pinB1A, rightForward);
+      setPinCached(PIN_B1B, _pinB1B, !rightForward);
+    } else {
+      setPinCached(PIN_B1A, _pinB1A, false);
+      setPinCached(PIN_B1B, _pinB1B, false);
+    }
   }
 };
 #endif

@@ -31,6 +31,18 @@ const int PIN_A1B = 27; // Motor Left B
 const int PIN_B1A = 14; // Motor Right A
 const int PIN_B1B = 12; // Motor Right B
 
+// Motor Speed Trim (0 - 100%)
+// ชดเชยความเร็วมอเตอร์ซ้าย-ขวา เพื่อแก้ปัญหารถวิ่งไม่ตรง
+// - รถเดินหน้าแล้วเลี้ยวเป๋ไปทางซ้าย = ล้อขวาเร็วกว่าล้อซ้าย ให้ลด MOTOR_RIGHT_TRIM_PCT ลง (เช่น 85, 80, 75)
+// - รถเดินหน้าแล้วเลี้ยวเป๋ไปทางขวา = ล้อซ้ายเร็วกว่าล้อขวา ให้ลด MOTOR_LEFT_TRIM_PCT ลง (เช่น 85, 80, 75)
+#ifndef MOTOR_LEFT_TRIM_PCT
+#define MOTOR_LEFT_TRIM_PCT   100  // กำลังล้อซ้าย (%) ค่าปกติ 100
+#endif
+#ifndef MOTOR_RIGHT_TRIM_PCT
+#define MOTOR_RIGHT_TRIM_PCT   100  // กำลังล้อขวา (%) ลดลงเพื่อแก้อาการเป๋ซ้าย
+#endif
+
+
 // ============================================================================
 // NETWORK CONFIGURATION
 // ============================================================================
