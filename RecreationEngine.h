@@ -2,6 +2,7 @@
 #define RECREATION_ENGINE_H
 
 #include <Arduino.h>
+#include "Config.h"
 #include "FaceSystem.h"
 #include "SongSystem.h"
 #include "MotionSystem.h"
@@ -9,16 +10,19 @@
 #include "SensorManager.h"
 
 // ============================================================================
-// RECREATION ENGINE (Coordinates Entertainment Modes & Interactive Follower)
+// RECREATION ENGINE (Autonomous Entertainment & Obstacle Avoidance Robot)
 // ============================================================================
-// ตัด Decision Tree ที่ซับซ้อนออกตามคำขอ ใช้ Fast if-else Architecture
-// ตัดสินใจทันทีในลูป (~30-50ms) ตอบสนองฉับไว ไม่หน่วง ไม่ค้าง และล้อวิ่ง 100% เท่ากัน
+// ออกแบบตามคำขอ:
+// 1. เดินสำรวจอิสระ (Roam) ไม่ชนกำแพง/สิ่งกีดขวาง (Obstacle Avoidance)
+// 2. ตัดฟังก์ชันเดินตามคนทิ้งทั้งหมด เพื่อไม่ให้เกิดความสับสนหรือลังเล
+// 3. สุ่มเล่นเพลง สุ่มเต้น สุ่มทักทาย สุ่มเปลี่ยนสีหน้า OLED สร้างความบันเทิงรอบตัว
+// 4. มอเตอร์ทำงานด้วยความเร็วสูงคงแรงบิด (85%-90%) ป้องกันล้อติดขัดจากน้ำหนักตัวถัง
 // ============================================================================
 
 enum RecreationMode {
   MODE_MANUAL = 0,        // Direct Web Control
   MODE_PARTY_BEAT = 1,    // Sound-Reactive Dancing (Clap/Music follower)
-  MODE_INTERACTIVE = 2,   // Fast Human Tracking & Interactive Follower (Direct if-else)
+  MODE_INTERACTIVE = 2,   // Autonomous Roam & Smart Entertainment
   MODE_SHOWCASE = 3       // Synchronized Song & Dance Performance
 };
 
@@ -35,25 +39,16 @@ public:
     _lastPartyMove(0),
     _showcaseActive(false),
     _partyRested(false),
-    _targetLocked(false),
     _filteredDist(-1.0f),
     _filterCount(0),
     _dropoutCount(0),
-    _lostStartTime(0),
-    _searchSweepTimer(0),
-    _searchPhase(0),
-    _searchTurnRight(true),
-    _lastGreetTime(0),
-    _lastLogTime(0),
-    _refDist(-1.0f),
-    _refDistTimer(0),
-    _movingConfirmCount(0),
-    _lastTargetMotionTime(0),
-    _pauseObserveTimer(0),
-    _isObservingObstacle(false),
-    _avoidTurnTimer(0),
     _isAvoiding(false),
+    _avoidStage(0),
+    _avoidTimer(0),
+    _avoidTurnDuration(420),
     _avoidTurnRight(true),
+    _nextEntertainmentTime(0),
+    _lastLogTime(0),
     _behavior("observe"),
     _reason("inactive") {}
 
@@ -65,21 +60,12 @@ public:
     _motor.stopMotors();
     _motion.freeze();
     _song.stop();
-    _targetLocked = false;
     _filteredDist = -1.0f;
     _filterCount = 0;
     _dropoutCount = 0;
-    _lostStartTime = 0;
-    _searchPhase = 0;
-    _searchTurnRight = true;
-    _refDist = -1.0f;
-    _refDistTimer = 0;
-    _movingConfirmCount = 0;
-    _lastTargetMotionTime = 0;
-    _pauseObserveTimer = 0;
-    _isObservingObstacle = false;
-    _avoidTurnTimer = 0;
     _isAvoiding = false;
+    _avoidStage = 0;
+    _avoidTimer = 0;
     _avoidTurnRight = true;
     _behavior = "observe";
     _reason = "inactive";
@@ -97,29 +83,28 @@ public:
       _face.setTemporaryFace("happy", 1200);
       _song.playById("sfx_happy");
     } else if (_mode == MODE_INTERACTIVE) {
-      _face.setFace("normal");
+      _face.setFace("happy");
       _song.toneBeep(880, 80);
       _behavior = "roam";
       _reason = "roam_cruise";
-      _lastGreetTime = millis();
-      _refDistTimer = millis();
-      Serial.println("\n[INTERACTIVE] Roam Forward & Moving Target Tracking Started");
+      _nextEntertainmentTime = millis() + 1500; // เริ่มสุ่มเพลงแรกหลังเปิดโหมด 1.5 วินาที
+      Serial.println("\n[INTERACTIVE] Autonomous Entertainment & Obstacle Avoidance Started!");
     }
   }
 
   bool startInteractive(bool lockFront = false) {
+    (void)lockFront;
     if (!robotSettings.get(SONAR_ENABLED) || !robotSettings.get(MOTOR_ENABLED) || !_motor.ready()) return false;
     setMode(MODE_INTERACTIVE);
-    _targetLocked = lockFront;
     return true;
   }
 
   const char* interactiveString() const { return "auto"; }
   const char* behaviorString() const { return _behavior; }
-  const char* decisionClass() const { return _targetLocked ? "moving_target" : (_isObservingObstacle ? "static_object" : "clear"); }
+  const char* decisionClass() const { return _isAvoiding ? "static_object" : "clear"; }
   const char* decisionReason() const { return _reason; }
-  bool targetLocked() const { return _targetLocked; }
-  uint8_t movingVotes() const { return _targetLocked ? 2 : 0; }
+  bool targetLocked() const { return false; }
+  uint8_t movingVotes() const { return 0; }
 
   RecreationMode mode() const { return _mode; }
 
@@ -135,7 +120,6 @@ public:
   // Start synchronized song & dance show
   bool startShowcase(const char* songId, const char* motionId) {
     _motor.stopMotors();
-    _targetLocked = false;
     _reason = "inactive";
     _song.stop();
     _motion.freeze();
@@ -177,7 +161,7 @@ public:
       return;
     }
 
-    // 3. Proximity Interactive Follower Mode (Fast if-else)
+    // 3. Autonomous Entertainment & Obstacle Avoidance (Interactive Mode)
     if (_mode == MODE_INTERACTIVE) {
       _updateInteractiveMode();
       return;
@@ -197,29 +181,20 @@ private:
   bool             _showcaseActive;
   bool             _partyRested;
 
-  // Interactive Follower State Variables
-  bool             _targetLocked;
+  // Obstacle Avoidance & Filtering
   float            _filteredDist;
   float            _filterBuf[5];
   uint8_t          _filterCount;
   uint8_t          _dropoutCount;
 
-  uint32_t         _lostStartTime;
-  uint32_t         _searchSweepTimer;
-  uint8_t          _searchPhase;
-  bool             _searchTurnRight;
-  uint32_t         _lastGreetTime;
-  uint32_t         _lastLogTime;
-
-  float            _refDist;
-  uint32_t         _refDistTimer;
-  uint8_t          _movingConfirmCount;
-  uint32_t         _lastTargetMotionTime;
-  uint32_t         _pauseObserveTimer;
-  bool             _isObservingObstacle;
-  uint32_t         _avoidTurnTimer;
   bool             _isAvoiding;
+  uint8_t          _avoidStage;
+  uint32_t         _avoidTimer;
+  uint32_t         _avoidTurnDuration;
   bool             _avoidTurnRight;
+
+  uint32_t         _nextEntertainmentTime;
+  uint32_t         _lastLogTime;
 
   const char*      _behavior;
   const char*      _reason;
@@ -265,60 +240,66 @@ private:
   }
 
   // --------------------------------------------------------------------------
-  // หมุนกวาดค้นหาเป้าหมาย (Sweep Search) เมื่อเป้าหมายหลุดสายตา
+  // สุ่มเลือกเพลง ท่าเต้น หรือการทักทาย สร้างความบันเทิงอย่างมีชีวิตชีวา
   // --------------------------------------------------------------------------
-  void _doSweepSearch(uint32_t now) {
-    uint32_t elapsed = now - _searchSweepTimer;
-
-    switch (_searchPhase) {
-      case 0:
-        // กวาดทิศทางแรก (550 ms)
-        if (_searchTurnRight) _motor.turnRight(SPEED_TURN_SEARCH);
-        else _motor.turnLeft(SPEED_TURN_SEARCH);
-        _face.setFace(_searchTurnRight ? "look_right" : "look_left");
-        if (elapsed >= 550) {
-          _motor.stopMotors();
-          _searchPhase = 1;
-          _searchSweepTimer = now;
-        }
-        break;
-
-      case 1:
-        // หยุดอ่านเซนเซอร์ชั่วขณะ (220 ms)
-        _motor.stopMotors();
-        if (elapsed >= 220) {
-          _searchTurnRight = !_searchTurnRight;
-          _searchPhase = 2;
-          _searchSweepTimer = now;
-        }
-        break;
-
-      case 2:
-        // กวาดทิศทางตรงข้าม (1100 ms)
-        if (_searchTurnRight) _motor.turnRight(SPEED_TURN_SEARCH);
-        else _motor.turnLeft(SPEED_TURN_SEARCH);
-        _face.setFace(_searchTurnRight ? "look_right" : "look_left");
-        if (elapsed >= 1100) {
-          _motor.stopMotors();
-          _searchPhase = 3;
-          _searchSweepTimer = now;
-        }
-        break;
-
-      case 3:
-        // หยุดอ่านเซนเซอร์อีกครั้ง (220 ms)
-        _motor.stopMotors();
-        if (elapsed >= 220) {
-          _searchTurnRight = !_searchTurnRight;
-          _searchPhase = 0;
-          _searchSweepTimer = now;
-        }
-        break;
+  void _triggerRandomEntertainment(uint32_t now) {
+    // 20% โอกาส: ทำท่าโบกมือทักทายพร้อมเสียง SFX สดใส
+    if (random(0, 100) < 20) {
+      _face.setTemporaryFace("love", 2000);
+      _song.playById("sfx_happy");
+      _motion.playById("wave");
+      _nextEntertainmentTime = now + random(10000, 18000);
+      Serial.println("[ENTERTAINMENT] Random Greeting: Waving Hello!");
+      return;
     }
+
+    // 80% โอกาส: สุ่มเล่นเพลงยอดนิยม พร้อมเต้นต่อเนื่อง
+    static const char* const FUN_SONGS[] = {
+      "mixue", "six_seven", "numalee", "chang", "kaiyang",
+      "kingkanbai", "tuktuk", "mario", "coffin", "babyshark",
+      "doraemon", "twinkle"
+    };
+    static const size_t FUN_SONG_COUNT = sizeof(FUN_SONGS) / sizeof(FUN_SONGS[0]);
+
+    size_t songIdx = random(0, FUN_SONG_COUNT);
+    const char* chosenSong = FUN_SONGS[songIdx];
+
+    _song.playById(chosenSong);
+
+    // เลือกท่าเต้นและสีหน้าที่แมตช์กับเพลง
+    if (strcmp(chosenSong, "six_seven") == 0) {
+      _motion.playById("six_seven", true);
+      _face.setFace("six_seven");
+    } else if (strcmp(chosenSong, "kaiyang") == 0) {
+      _motion.playById("chicken", true);
+      _face.setFace("music");
+    } else {
+      _triggerRandomDance();
+    }
+
+    // กำหนดเวลาสุ่มความบันเทิงรอบถัดไป
+    _nextEntertainmentTime = now + random(18000, 32000);
+    Serial.printf("[ENTERTAINMENT] Playing random song: %s\n", chosenSong);
+  }
+
+  void _triggerRandomDance() {
+    static const char* const FUN_DANCES[] = {
+      "dance", "disco", "chicken", "cheer", "wave", "hug", "head_shake"
+    };
+    static const size_t FUN_DANCE_COUNT = sizeof(FUN_DANCES) / sizeof(FUN_DANCES[0]);
+    static const char* const FUN_FACES[] = {
+      "happy", "love", "wink", "cool", "music"
+    };
+    static const size_t FUN_FACE_COUNT = sizeof(FUN_FACES) / sizeof(FUN_FACES[0]);
+
+    size_t dIdx = random(0, FUN_DANCE_COUNT);
+    size_t fIdx = random(0, FUN_FACE_COUNT);
+    _motion.playById(FUN_DANCES[dIdx], true);
+    _face.setFace(FUN_FACES[fIdx]);
   }
 
   // --------------------------------------------------------------------------
-  // Interactive Engine: Roaming ("เดินๆ ไป") + Moving Target Tracking (วัตถุขยับ)
+  // โหมดเดินสำรวจ & หลบสิ่งกีดขวาง + ความบันเทิง (Interactive Roam & Entertainment)
   // --------------------------------------------------------------------------
   void _updateInteractiveMode() {
     uint32_t now = millis();
@@ -335,209 +316,83 @@ private:
     float raw = _sensor.distanceValid() ? _sensor.distance() : -1.0f;
     float dist = _filterDistance(raw);
 
-    // 3. จัดการกรณีที่กำลังเล่นท่าทางทักทาย (Wave motion)
-    if (_motion.isMoving()) {
-      _motor.stopMotors();
-      _behavior = "greet";
-      _reason = "greeting";
-      return;
-    }
-
     // ========================================================================
-    // STATE A: กำลังหมุนเลี้ยวหลบสิ่งกีดขวาง (Obstacle Avoidance Turn)
+    // PART A: หลบสิ่งกีดขวาง (Obstacle Avoidance ไม่ชนกำแพง)
     // ========================================================================
     if (_isAvoiding) {
-      if (now - _avoidTurnTimer < 380) {
-        if (_avoidTurnRight) _motor.turnRight(SPEED_TURN_SEARCH);
-        else _motor.turnLeft(SPEED_TURN_SEARCH);
+      uint32_t elapsed = now - _avoidTimer;
+
+      if (_avoidStage == 1) {
+        // ถอยหลังสั้นๆ เพื่อเปิดระยะห่างจากสิ่งกีดขวาง (180 ms)
+        _motor.moveBackward(SPEED_REVERSE_PCT);
+        _behavior = "avoid";
+        _reason = "escape_reverse";
+        if (elapsed >= 180) {
+          _avoidStage = 2;
+          _avoidTimer = now;
+          _avoidTurnRight = (random(0, 2) == 0); // สุ่มเลี้ยวซ้ายหรือขวา
+          _avoidTurnDuration = random(380, 520);
+        }
+        return;
+      } else if (_avoidStage == 2) {
+        // หมุนเลี้ยวออกจากสิ่งกีดขวางด้วยแรงบิดสูง 100%
+        if (_avoidTurnRight) _motor.turnRight(SPEED_ROAM_TURN);
+        else _motor.turnLeft(SPEED_ROAM_TURN);
         _behavior = "avoid";
         _reason = "avoid_turn";
-        return;
-      } else {
-        _motor.stopMotors();
-        _isAvoiding = false;
-        _isObservingObstacle = false;
-        _refDist = -1.0f;
-        _refDistTimer = now;
-      }
-    }
-
-    // ========================================================================
-    // STATE B: ถ้ายังไม่ได้ล็อคเป้าหมาย (ROAMING: เดินๆ ไปสำรวจหาวัตถุที่ขยับ)
-    // ========================================================================
-    if (!_targetLocked) {
-      // B.1 ใกล้สิ่งกีดขวางฉุกเฉิน (< 32 cm) -> หลบทันที
-      if (dist > 0 && dist < 32.0f) {
-        _isAvoiding = true;
-        _avoidTurnTimer = now;
-        _avoidTurnRight = !_avoidTurnRight;
-        _face.setFace("surprise");
-        _motor.stopMotors();
-        return;
-      }
-
-      // B.2 ตรวจจับ "วัตถุที่ขยับระยะห่างไปเรื่อยๆ"
-      if (_refDist < 0 || (now - _refDistTimer >= 150)) {
-        if (_refDist > 0 && dist > 0) {
-          float delta = dist - _refDist;
-
-          // ถ้ามีวัตถุด้านหน้า (45 - 160 cm) และระยะกำลัง "ขยับห่างออกไป" (delta >= 3.5 cm)
-          // ขณะที่หุ่นกำลังเดินหน้าแต่ระยะกลับเพิ่มขึ้น = วัตถุข้างหน้ากำลังเดินหนี/เคลื่อนที่นำหน้าแน่นอน!
-          if (dist >= 45.0f && dist <= 160.0f && delta >= 3.5f) {
-            _movingConfirmCount++;
-            if (_movingConfirmCount >= 2) {
-              _targetLocked = true;
-              _movingConfirmCount = 0;
-              _lastTargetMotionTime = now;
-              _isObservingObstacle = false;
-              _face.setFace("happy");
-              _song.toneBeep(880, 80);
-              Serial.println("[INTERACTIVE] Moving Target Detected Ahead! Locked & Following!");
-              return;
-            }
-          } else {
-            if (_movingConfirmCount > 0) _movingConfirmCount--;
-          }
-        }
-        _refDist = dist;
-        _refDistTimer = now;
-      }
-
-      // B.3 มีสิ่งกีดขวางอยู่ตรงหน้าปานกลาง (32 - 50 cm)
-      // หุ่นยนต์จะหยุดดูชั่วขณะ (250 ms) เพื่อแยกแยะว่าเป็นกำแพงหรือคน
-      if (dist >= 32.0f && dist <= 50.0f) {
-        if (!_isObservingObstacle) {
-          _isObservingObstacle = true;
-          _pauseObserveTimer = now;
+        if (elapsed >= _avoidTurnDuration) {
           _motor.stopMotors();
-          _behavior = "observe";
-          _reason = "checking_object";
-          return;
-        }
-
-        _motor.stopMotors();
-        // ถ้าหยุดดูแล้วระยะขยับ (|dist - _refDist| >= 3.0 cm) -> คนกำลังขยับตัวอยู่ตรงหน้า!
-        if (fabs(dist - _refDist) >= 3.0f) {
-          _targetLocked = true;
-          _isObservingObstacle = false;
-          _face.setFace("love");
-          _song.toneBeep(988, 80);
-          return;
-        }
-
-        // ถ้าหยุดครบ 250 ms แล้วระยะยังนิ่งสนิท -> สิ่งของนิ่ง/กำแพง! ให้เลี้ยวหลบ
-        if (now - _pauseObserveTimer >= 250) {
-          _isAvoiding = true;
-          _avoidTurnTimer = now;
-          _avoidTurnRight = !_avoidTurnRight;
-          _isObservingObstacle = false;
-          return;
+          _isAvoiding = false;
+          _avoidStage = 0;
         }
         return;
       }
-
-      // B.4 ทางโล่ง (> 50 cm หรือไม่มี echo) -> เดินหน้าสำรวจไปเรื่อยๆ (เดินๆ ไป)
-      _isObservingObstacle = false;
-      _motor.moveForward(SPEED_FOLLOW_SLOW); // 85% รักษาแรงบิดสำหรับตัวถังหนัก
-      _behavior = "roam";
-      _reason = "roam_cruise";
-      _face.setFace("normal");
-
-      // Serial Debug Monitor (Rate-limited 400ms)
-      if (now - _lastLogTime >= 400) {
-        _lastLogTime = now;
-        Serial.printf("[ROAM] Dist: %.1f cm | Walking Forward...\n", dist);
-      }
-      return;
     }
 
-    // ========================================================================
-    // STATE C: ล็อคเป้าหมายแล้ว (FOLLOWING: เดินตามวัตถุที่ขยับด้วย Fast if-else)
-    // ========================================================================
-    // C.1 เป้าหมายหลุดระยะ (> 180 cm หรือขาด echo)
-    if (dist <= 0 || dist > 180.0f) {
-      if (_lostStartTime == 0) {
-        _lostStartTime = now;
-        _motor.stopMotors();
-        _behavior = "stop";
-        _reason = "target_lost";
-        _face.setFace("surprise");
-      } else if (now - _lostStartTime < 300) {
-        _motor.stopMotors();
-      } else if (now - _lostStartTime < 3500) {
-        // กวาดค้นหา 3.5 วินาที
-        _behavior = "avoid";
-        _reason = "searching";
-        _doSweepSearch(now);
+    // ตรวจพบสิ่งกีดขวางหรือกำแพง (< 38 cm)
+    if (dist > 0 && dist <= 38.0f) {
+      _motor.stopMotors();
+      _isAvoiding = true;
+      _avoidTimer = now;
+      _face.setTemporaryFace("surprise", 900);
+
+      if (dist < 22.0f) {
+        // ใกล้กำแพงมาก -> ถอยหลังสั้นๆ ก่อน
+        _avoidStage = 1;
       } else {
-        // หาไม่พบเกิน 3.5 วินาที -> ปลดล็อค แล้วกลับไป "เดินๆ ไป (Roam)" หาคนใหม่ต่อ!
-        _targetLocked = false;
-        _lostStartTime = 0;
-        _motor.stopMotors();
-        _face.setFace("normal");
-        Serial.println("[INTERACTIVE] Target lost timeout -> Returning to Roam mode.");
+        // ระยะพอดี -> หมุนเลี้ยวได้ทันที
+        _avoidStage = 2;
+        _avoidTurnRight = (random(0, 2) == 0); // สุ่มเลี้ยวซ้ายหรือขวา
+        _avoidTurnDuration = random(380, 520);
       }
       return;
     }
 
-    // พบเป้าหมายชัดเจนในระยะ (8 - 180 cm)
-    _lostStartTime = 0;
+    // ทางข้างหน้าโล่ง (> 38 cm หรือไม่มีสิ่งกีดขวาง) -> เดินหน้าสำรวจเต็มกำลัง 100%
+    _motor.moveForward(SPEED_ROAM_FORWARD); // มอเตอร์ 100% เท่ากัน ขับเคลื่อนบอดี้หนัก
+    _behavior = "roam";
+    _reason = "roam_cruise";
 
-    // C.2 ทักทาย (Greeting): ยืนตรงหน้า 50 - 65 cm และเว้นช่วง 10 วินาที
-    if (dist >= 50.0f && dist <= 65.0f && (now - _lastGreetTime >= 10000)) {
-      _lastGreetTime = now;
-      _motor.stopMotors();
-      _behavior = "greet";
-      _reason = "greeting";
-      _face.setTemporaryFace("love", 1600);
-      _song.playById("sfx_happy");
-      _motion.playById("wave");
-      return;
+    // ========================================================================
+    // PART B: ระบบสร้างความบันเทิงอัตโนมัติ (Random Entertainment Engine)
+    // ========================================================================
+    // ถ้ายังไม่ได้เล่นเพลง และถึงเวลาสุ่มความบันเทิง
+    if (!_song.isPlaying() && now >= _nextEntertainmentTime) {
+      _triggerRandomEntertainment(now);
     }
 
-    // C.3 Fast if-else Distance Following (ความถี่สูง 30ms ตอบสนองทันใจ)
-    if (dist < 35.0f) {
-      // < 35 cm: ใกล้เกินไป อันตราย -> เบรกหยุดทันที
-      _motor.stopMotors();
-      _behavior = "stop";
-      _reason = "too_close_stop";
-      _face.setFace("surprise");
-    } else if (dist < 50.0f) {
-      // 35 - 50 cm: ชิดเกินไป -> ถอยหลังเว้นระยะ (85% รักษาแรงบิด)
-      _motor.moveBackward(SPEED_REVERSE_PCT);
-      _behavior = "avoid";
-      _reason = "escape_reverse";
-      _face.setFace("surprise");
-    } else if (dist <= 65.0f) {
-      // 50 - 65 cm: TARGET ZONE (60 cm) -> หยุดรักษาระยะ สบตา
-      _motor.stopMotors();
-      _behavior = "follow";
-      _reason = "follow_hold";
-      _face.setFace("love");
-    } else if (dist <= 85.0f) {
-      // 65 - 85 cm: ขยับห่างออกไป -> เดินตามชิด (85%)
-      _motor.moveForward(SPEED_FOLLOW_SLOW);
-      _behavior = "follow";
-      _reason = "follow_cruise";
-      _face.setFace("normal");
-    } else if (dist <= 110.0f) {
-      // 85 - 110 cm: ขยับห่างออกไปอีก -> เดินตามปกติ (95%)
-      _motor.moveForward(SPEED_FOLLOW_MID);
-      _behavior = "follow";
-      _reason = "follow_cruise";
-      _face.setFace("happy");
-    } else {
-      // 110 - 180 cm: วัตถุอยู่ไกล -> เดินตามเร็วเต็มกำลัง (100%)
-      _motor.moveForward(SPEED_FOLLOW_FAST);
-      _behavior = "follow";
-      _reason = "follow_cruise";
-      _face.setFace("happy");
+    // ถ้ากำลังเล่นเพลงอยู่ ให้วนท่าเต้นต่อเนื่อง
+    if (_song.isPlaying()) {
+      if (_motion.isMoving() == false) {
+        _triggerRandomDance();
+      }
     }
 
-    // Serial Debug Monitor (Rate-limited 300ms)
-    if (now - _lastLogTime >= 300) {
+    // Serial Debug Monitor (Rate-limited 400ms)
+    if (now - _lastLogTime >= 400) {
       _lastLogTime = now;
-      Serial.printf("[FOLLOW] Dist: %.1f cm | %s | %s\n", dist, _behavior, _reason);
+      Serial.printf("[ROAM & FUN] Dist: %.1f cm | Move: %s | Song: %s\n",
+                    dist, _behavior, _song.isPlaying() ? "Playing" : "Idle");
     }
   }
 
