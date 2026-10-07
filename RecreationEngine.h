@@ -45,8 +45,11 @@ public:
     _isAvoiding(false),
     _avoidStage(0),
     _avoidTimer(0),
-    _avoidTurnDuration(420),
+    _avoidReverseDuration(AVOID_REVERSE_HOLD_MS),
+    _avoidTurnDuration(500),
     _avoidTurnRight(true),
+    _consecutiveBlocks(0),
+    _lastAvoidClearTime(0),
     _nextEntertainmentTime(0),
     _lastLogTime(0),
     _behavior("observe"),
@@ -67,6 +70,8 @@ public:
     _avoidStage = 0;
     _avoidTimer = 0;
     _avoidTurnRight = true;
+    _consecutiveBlocks = 0;
+    _lastAvoidClearTime = 0;
     _behavior = "observe";
     _reason = "inactive";
     _mode = mode;
@@ -190,8 +195,11 @@ private:
   bool             _isAvoiding;
   uint8_t          _avoidStage;
   uint32_t         _avoidTimer;
+  uint32_t         _avoidReverseDuration;
   uint32_t         _avoidTurnDuration;
   bool             _avoidTurnRight;
+  uint8_t          _consecutiveBlocks;
+  uint32_t         _lastAvoidClearTime;
 
   uint32_t         _nextEntertainmentTime;
   uint32_t         _lastLogTime;
@@ -317,33 +325,47 @@ private:
     float dist = _filterDistance(raw);
 
     // ========================================================================
-    // PART A: หลบสิ่งกีดขวาง (Obstacle Avoidance ไม่ชนกำแพง)
+    // PART A: หลบสิ่งกีดขวาง & หาทางใหม่ (ถอยหลังค้าง แล้วค่อยเลี้ยว)
     // ========================================================================
     if (_isAvoiding) {
       uint32_t elapsed = now - _avoidTimer;
 
       if (_avoidStage == 1) {
-        // ถอยหลังสั้นๆ เพื่อเปิดระยะห่างจากสิ่งกีดขวาง (180 ms)
+        // ขั้นตอนที่ 1: ถอยหลังค้าง (Sustained Reverse Hold)
+        // ดึงตัวถังหนักออกจากกำแพงหรือมุมตัน เพื่อเปิดระยะห่างด้านหน้าอย่างปลอดภัย
         _motor.moveBackward(SPEED_REVERSE_PCT);
         _behavior = "avoid";
         _reason = "escape_reverse";
-        if (elapsed >= 180) {
+
+        if (elapsed >= _avoidReverseDuration) {
+          _motor.stopMotors();
           _avoidStage = 2;
           _avoidTimer = now;
-          _avoidTurnRight = (random(0, 2) == 0); // สุ่มเลี้ยวซ้ายหรือขวา
-          _avoidTurnDuration = random(380, 520);
         }
         return;
       } else if (_avoidStage == 2) {
-        // หมุนเลี้ยวออกจากสิ่งกีดขวางด้วยแรงบิดสูง 100%
+        // ขั้นตอนที่ 2: หยุดพักสั้นๆ (90 ms) ให้มอเตอร์ตัดแรงเฉื่อยและป้องกันไฟกระชาก
+        _motor.stopMotors();
+        _behavior = "avoid";
+        _reason = "escape_reverse";
+
+        if (elapsed >= 90) {
+          _avoidStage = 3;
+          _avoidTimer = now;
+        }
+        return;
+      } else if (_avoidStage == 3) {
+        // ขั้นตอนที่ 3: หมุนเลี้ยวหาทางใหม่ (High Torque Pivot Turn 100%)
         if (_avoidTurnRight) _motor.turnRight(SPEED_ROAM_TURN);
         else _motor.turnLeft(SPEED_ROAM_TURN);
         _behavior = "avoid";
         _reason = "avoid_turn";
+
         if (elapsed >= _avoidTurnDuration) {
           _motor.stopMotors();
           _isAvoiding = false;
           _avoidStage = 0;
+          _lastAvoidClearTime = now;
         }
         return;
       }
@@ -354,18 +376,39 @@ private:
       _motor.stopMotors();
       _isAvoiding = true;
       _avoidTimer = now;
-      _face.setTemporaryFace("surprise", 900);
+      _avoidStage = 1; // เริ่มขั้นตอนถอยหลังค้างทันที
 
-      if (dist < 22.0f) {
-        // ใกล้กำแพงมาก -> ถอยหลังสั้นๆ ก่อน
-        _avoidStage = 1;
+      // ตรวจสอบว่าเป็นการติดซ้ำซ้อนในมุมอับ/ทางตันหรือไม่
+      if (now - _lastAvoidClearTime < 2200) {
+        _consecutiveBlocks++;
       } else {
-        // ระยะพอดี -> หมุนเลี้ยวได้ทันที
-        _avoidStage = 2;
-        _avoidTurnRight = (random(0, 2) == 0); // สุ่มเลี้ยวซ้ายหรือขวา
-        _avoidTurnDuration = random(380, 520);
+        _consecutiveBlocks = 1;
+      }
+
+      if (_consecutiveBlocks >= 2) {
+        // เจอทางตัน / เข้ามุม: ถอยหลังค้างยาวพิเศษ (~1000–1250 ms) แล้วสุ่มหมุน U-turn ออก
+        _avoidReverseDuration = random(AVOID_DEADEND_HOLD_MS - 100, AVOID_DEADEND_HOLD_MS + 150);
+        _avoidTurnDuration = random(750, 950); // หมุนตัวกลับหลังหันออกจากซอยตัน
+        _avoidTurnRight = (random(0, 2) == 0);
+        _face.setTemporaryFace("surprise", 1500);
+        _song.toneBeep(660, 120); // บี๊บเตือนสั้นๆ ว่าพบทางตัน
+        Serial.printf("[AVOID] Dead-end trap (Streak %d)! Long reverse: %lu ms -> U-turn: %lu ms\n",
+                      _consecutiveBlocks, (unsigned long)_avoidReverseDuration, (unsigned long)_avoidTurnDuration);
+      } else {
+        // เจอกำแพง/สิ่งกีดขวางทั่วไป: ถอยหลังค้าง (~650–800 ms) แล้วสุ่มเลี้ยวหาทางใหม่
+        _avoidReverseDuration = random(AVOID_REVERSE_HOLD_MS, AVOID_REVERSE_HOLD_MS + 150);
+        _avoidTurnDuration = random(AVOID_TURN_MIN_MS, AVOID_TURN_MAX_MS);
+        _avoidTurnRight = (random(0, 2) == 0);
+        _face.setTemporaryFace("surprise", 900);
+        Serial.printf("[AVOID] Obstacle ahead (%.1f cm)! Sustained reverse: %lu ms -> Turn: %lu ms\n",
+                      dist, (unsigned long)_avoidReverseDuration, (unsigned long)_avoidTurnDuration);
       }
       return;
+    }
+
+    // ถ้าเดินหน้าต่อได้ราบรื่นเกิน 3 วินาที ให้รีเซ็ตประวัติทางตัน
+    if (now - _lastAvoidClearTime > 3000 && _consecutiveBlocks > 0) {
+      _consecutiveBlocks = 0;
     }
 
     // ทางข้างหน้าโล่ง (> 38 cm หรือไม่มีสิ่งกีดขวาง) -> เดินหน้าสำรวจเต็มกำลัง 100%

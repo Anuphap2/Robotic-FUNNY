@@ -68,6 +68,20 @@ const int PIN_B1B = 12; // Motor Right B
 #define SPEED_TURN_SEARCH     100   // หมุนเลี้ยวด้วยแรงบิด 100% เต็มกำลัง
 #endif
 
+// Obstacle Avoidance & Dead-end Maneuvers (ถอยหลังค้าง แล้วค่อยเลี้ยวหาทางใหม่)
+#ifndef AVOID_REVERSE_HOLD_MS
+#define AVOID_REVERSE_HOLD_MS     650   // เวลาถอยหลังค้าง (ms) เพื่อดึงตัวถังออกจากกำแพง
+#endif
+#ifndef AVOID_DEADEND_HOLD_MS
+#define AVOID_DEADEND_HOLD_MS    1100   // เวลาถอยหลังค้างกรณีเจอทางตัน/มุมอับซ้ำซ้อน (ms)
+#endif
+#ifndef AVOID_TURN_MIN_MS
+#define AVOID_TURN_MIN_MS         450   // เวลาหมุนเลี้ยวขั้นต่ำ (ms)
+#endif
+#ifndef AVOID_TURN_MAX_MS
+#define AVOID_TURN_MAX_MS         650   // เวลาหมุนเลี้ยวสูงสุด (ms)
+#endif
+
 
 // ============================================================================
 // NETWORK CONFIGURATION
