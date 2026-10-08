@@ -70,7 +70,7 @@ const int PIN_B1B = 12; // Motor Right B
 
 // Obstacle Avoidance & Dead-end Maneuvers (ถอยหลังค้าง แล้วค่อยเลี้ยวหาทางใหม่)
 #ifndef AVOID_DISTANCE_THRESHOLD_CM
-#define AVOID_DISTANCE_THRESHOLD_CM 25.0f   // ระยะตรวจจับสิ่งกีดขวาง (cm) พอดี ไม่โดนแสงสะท้อนจากพื้นหลอก
+#define AVOID_DISTANCE_THRESHOLD_CM 35.0f   // ระยะตรวจจับสิ่งกีดขวาง (cm) เริ่มต้น แนะนำ 35–45 cm เมื่อเซนเซอร์ติดบนหัว
 #endif
 #ifndef AVOID_REVERSE_HOLD_MS
 #define AVOID_REVERSE_HOLD_MS     650   // เวลาถอยหลังค้าง (ms) เพื่อดึงตัวถังออกจากกำแพง

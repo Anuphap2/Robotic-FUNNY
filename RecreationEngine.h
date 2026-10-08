@@ -96,12 +96,13 @@ public:
       _face.setTemporaryFace("happy", 1200);
       _song.playById("sfx_happy");
     } else if (_mode == MODE_INTERACTIVE) {
+      _motion.toCenter();
       _face.setFace("happy");
       _song.toneBeep(880, 80);
       _behavior = "roam";
       _reason = "roam_cruise";
       _nextEntertainmentTime = millis() + 1500; // เริ่มสุ่มเพลงแรกหลังเปิดโหมด 1.5 วินาที
-      Serial.println("\n[INTERACTIVE] Autonomous Entertainment & Obstacle Avoidance Started!");
+      Serial.println("\n[INTERACTIVE] Autonomous Roam & Obstacle Avoidance Started! (Arms stationary)");
     }
   }
 
@@ -261,20 +262,20 @@ private:
   }
 
   // --------------------------------------------------------------------------
-  // สุ่มเลือกเพลง ท่าเต้น หรือการทักทาย สร้างความบันเทิงอย่างมีชีวิตชีวา
+  // --------------------------------------------------------------------------
+  // สุ่มเลือกเพลงสร้างความบันเทิงระหว่างเดินสำรวจ (เล่นเฉพาะเพลง/SFX และเปลี่ยนสีหน้า แขนอยู่นิ่ง)
   // --------------------------------------------------------------------------
   void _triggerRandomEntertainment(uint32_t now) {
-    // 20% โอกาส: ทำท่าโบกมือทักทายพร้อมเสียง SFX สดใส
+    // 20% โอกาส: เล่นเสียง SFX ทักทายสดใส (ไม่ขยับแขน)
     if (random(0, 100) < 20) {
       _face.setTemporaryFace("love", 2000);
       _song.playById("sfx_happy");
-      _motion.playById("wave");
       _nextEntertainmentTime = now + random(10000, 18000);
-      Serial.println("[ENTERTAINMENT] Random Greeting: Waving Hello!");
+      Serial.println("[ENTERTAINMENT] Random Sound Greeting (Arms stationary)");
       return;
     }
 
-    // 80% โอกาส: สุ่มเล่นเพลงยอดนิยม พร้อมเต้นต่อเนื่อง
+    // 80% โอกาส: สุ่มเล่นเพลงยอดนิยม พร้อมเปลี่ยนสีหน้า OLED (แขนอยู่นิ่ง)
     static const char* const FUN_SONGS[] = {
       "mixue", "six_seven", "numalee", "chang", "kaiyang",
       "kingkanbai", "tuktuk", "mario", "coffin", "babyshark",
@@ -287,36 +288,20 @@ private:
 
     _song.playById(chosenSong);
 
-    // เลือกท่าเต้นและสีหน้าที่แมตช์กับเพลง
+    // เลือกสีหน้าที่เข้ากับเพลง
     if (strcmp(chosenSong, "six_seven") == 0) {
-      _motion.playById("six_seven", true);
       _face.setFace("six_seven");
-    } else if (strcmp(chosenSong, "kaiyang") == 0) {
-      _motion.playById("chicken", true);
-      _face.setFace("music");
     } else {
-      _triggerRandomDance();
+      static const char* const FUN_FACES[] = {
+        "happy", "love", "wink", "cool", "music"
+      };
+      size_t fIdx = random(0, sizeof(FUN_FACES) / sizeof(FUN_FACES[0]));
+      _face.setFace(FUN_FACES[fIdx]);
     }
 
     // กำหนดเวลาสุ่มความบันเทิงรอบถัดไป
     _nextEntertainmentTime = now + random(18000, 32000);
-    Serial.printf("[ENTERTAINMENT] Playing random song: %s\n", chosenSong);
-  }
-
-  void _triggerRandomDance() {
-    static const char* const FUN_DANCES[] = {
-      "dance", "disco", "chicken", "cheer", "wave", "hug", "head_shake"
-    };
-    static const size_t FUN_DANCE_COUNT = sizeof(FUN_DANCES) / sizeof(FUN_DANCES[0]);
-    static const char* const FUN_FACES[] = {
-      "happy", "love", "wink", "cool", "music"
-    };
-    static const size_t FUN_FACE_COUNT = sizeof(FUN_FACES) / sizeof(FUN_FACES[0]);
-
-    size_t dIdx = random(0, FUN_DANCE_COUNT);
-    size_t fIdx = random(0, FUN_FACE_COUNT);
-    _motion.playById(FUN_DANCES[dIdx], true);
-    _face.setFace(FUN_FACES[fIdx]);
+    Serial.printf("[ENTERTAINMENT] Playing random song: %s (Arms stationary)\n", chosenSong);
   }
 
   // --------------------------------------------------------------------------
@@ -337,6 +322,14 @@ private:
     float raw = _sensor.distanceValid() ? _sensor.distance() : -1.0f;
     float dist = _filterDistance(raw);
 
+    // ดึงระยะตั้งค่าสำหรับเริ่มหลบสิ่งกีดขวาง (auto_stop_cm จาก Config)
+    const float avoidThreshold = (float)max((int32_t)15, robotSettings.get(AUTO_STOP));
+    const int centerDeg = robotSettings.get(HEAD_CENTER);
+    const int minDeg = robotSettings.get(HEAD_MIN);
+    const int maxDeg = robotSettings.get(HEAD_MAX);
+    const int scanLeftDeg = constrain(centerDeg + 55, minDeg, maxDeg);
+    const int scanRightDeg = constrain(centerDeg - 55, minDeg, maxDeg);
+
     // ========================================================================
     // PART A: หลบสิ่งกีดขวาง & หาทางใหม่ด้วย Servo Scan (แทนการหมุนตัวทั้งคัน)
     // ========================================================================
@@ -344,7 +337,7 @@ private:
       uint32_t elapsed = now - _avoidTimer;
 
       if (_avoidStage == 1) {
-        // ขั้นตอนที่ 1: ถอยหลังระยะสั้น (Micro-reverse) เมื่อประชิดกำแพงมากเกินไป (< 14 cm)
+        // ขั้นตอนที่ 1: ถอยหลังระยะสั้น (Micro-reverse) เมื่อประชิดกำแพงมากเกินไป
         // เพื่อเว้นระยะปลอดภัยให้หัวหมุนกวาดได้โดยไม่ชนสิ่งกีดขวาง
         _motor.moveBackward(SPEED_REVERSE_PCT);
         _behavior = "avoid";
@@ -355,13 +348,13 @@ private:
           // สลับเข้าสู่การกวาดหัวสแกนซ้าย
           _avoidStage = 2;
           _avoidTimer = now;
-          _motion.setHeadAngle(HEAD_SCAN_LEFT_DEG);
+          _motion.setHeadAngle(scanLeftDeg);
           _behavior = "avoid";
           _reason = "scan_turn";
         }
         return;
       } else if (_avoidStage == 2) {
-        // ขั้นตอนที่ 2: เซอร์โวหัวหันมองซ้าย (HEAD_SCAN_LEFT_DEG)
+        // ขั้นตอนที่ 2: เซอร์โวหัวหันมองซ้าย (scanLeftDeg)
         _motor.stopMotors();
         _behavior = "avoid";
         _reason = "scan_turn";
@@ -369,17 +362,17 @@ private:
         if (elapsed >= HEAD_SCAN_SETTLE_MS) {
           // อ่านระยะด้านซ้าย
           _distLeft = _sensor.distanceValid() ? _sensor.distance() : -1.0f;
-          Serial.printf("[SCAN] Left (%d deg) -> Dist: %.1f cm\n", HEAD_SCAN_LEFT_DEG, _distLeft);
+          Serial.printf("[SCAN] Left (%d deg) -> Dist: %.1f cm\n", scanLeftDeg, _distLeft);
 
-          // สั่งเซอร์โวหัวหันกวาดไปทางขวา (HEAD_SCAN_RIGHT_DEG)
+          // สั่งเซอร์โวหัวหันกวาดไปทางขวา (scanRightDeg)
           _avoidStage = 3;
           _avoidTimer = now;
-          _motion.setHeadAngle(HEAD_SCAN_RIGHT_DEG);
+          _motion.setHeadAngle(scanRightDeg);
           _reason = "scan_right";
         }
         return;
       } else if (_avoidStage == 3) {
-        // ขั้นตอนที่ 3: เซอร์โวหัวหันมองขวา (HEAD_SCAN_RIGHT_DEG)
+        // ขั้นตอนที่ 3: เซอร์โวหัวหันมองขวา (scanRightDeg)
         _motor.stopMotors();
         _behavior = "avoid";
         _reason = "scan_right";
@@ -388,12 +381,12 @@ private:
         if (elapsed >= (HEAD_SCAN_SETTLE_MS + 40)) {
           // อ่านระยะด้านขวา
           _distRight = _sensor.distanceValid() ? _sensor.distance() : -1.0f;
-          Serial.printf("[SCAN] Right (%d deg) -> Dist: %.1f cm\n", HEAD_SCAN_RIGHT_DEG, _distRight);
+          Serial.printf("[SCAN] Right (%d deg) -> Dist: %.1f cm\n", scanRightDeg, _distRight);
 
-          // หมุนหัวกลับมาหน้าตรง (Center)
+          // หมุนหัวกลับมาหน้าตรง (centerDeg)
           _avoidStage = 4;
           _avoidTimer = now;
-          _motion.setHeadAngle(robotSettings.get(HEAD_CENTER));
+          _motion.setHeadAngle(centerDeg);
         }
         return;
       } else if (_avoidStage == 4) {
@@ -406,10 +399,11 @@ private:
           float scoreL = (_distLeft <= 0.0f || _distLeft > 200.0f) ? 999.0f : _distLeft;
           float scoreR = (_distRight <= 0.0f || _distRight > 200.0f) ? 999.0f : _distRight;
 
-          Serial.printf("[SCAN DECISION] Left score: %.1f cm | Right score: %.1f cm\n", scoreL, scoreR);
+          Serial.printf("[SCAN DECISION] Left score: %.1f cm | Right score: %.1f cm (Avoid Threshold: %.1f cm)\n",
+                        scoreL, scoreR, avoidThreshold);
 
-          // กรณีเจอทางตัน/มุมอับ (Dead-end): ทั้งสองด้านมีสิ่งกีดขวางขวางอยู่ (< AVOID_DISTANCE_THRESHOLD_CM)
-          if (scoreL <= AVOID_DISTANCE_THRESHOLD_CM && scoreR <= AVOID_DISTANCE_THRESHOLD_CM) {
+          // กรณีเจอทางตัน/มุมอับ (Dead-end): ทั้งสองด้านมีสิ่งกีดขวางขวางอยู่ (<= avoidThreshold)
+          if (scoreL <= avoidThreshold && scoreR <= avoidThreshold) {
             _consecutiveBlocks++;
             _avoidStage = 5; // Long Reverse Hold
             _avoidTimer = now;
@@ -474,16 +468,16 @@ private:
           _filterCount = 0;
           _dropoutCount = 0;
           _obstacleDetectCount = 0;
-          _motion.setHeadAngle(robotSettings.get(HEAD_CENTER));
+          _motion.setHeadAngle(centerDeg);
           Serial.println("[SCAN] Avoidance complete. Resuming forward roam!");
         }
         return;
       }
     }
 
-    // ตรวจพบสิ่งกีดขวางหรือกำแพง (< AVOID_DISTANCE_THRESHOLD_CM)
+    // ตรวจพบสิ่งกีดขวางหรือกำแพง (<= avoidThreshold)
     // กรองยืนยัน 2 ครั้งติดกัน (Debounce) ป้องกันคลื่นสะท้อนพื้นหลอกให้หุ่นเบรกหมุนตัวซ้ำซาก
-    if (dist > 0 && dist <= AVOID_DISTANCE_THRESHOLD_CM) {
+    if (dist > 0 && dist <= avoidThreshold) {
       _obstacleDetectCount++;
     } else {
       _obstacleDetectCount = 0;
@@ -504,8 +498,8 @@ private:
         _avoidTurnRight = (random(0, 2) == 0);
         _behavior = "avoid";
         _reason = "escape_reverse";
-      } else if (_frontDistAtTrigger > 0 && _frontDistAtTrigger < 14.0f) {
-        // ถ้าชิดสิ่งกีดขวางมากเกินไป (< 14 cm) ถอยระยะสั้นๆ ก่อน เพื่อเปิดช่องว่างให้หัวหมุนกวาดได้
+      } else if (_frontDistAtTrigger > 0 && _frontDistAtTrigger < (avoidThreshold * 0.55f)) {
+        // ถ้าชิดสิ่งกีดขวางมากเกินไป ถอยระยะสั้นๆ ก่อน เพื่อเปิดช่องว่างให้หัวหมุนกวาดได้
         _avoidStage = 1;
         _avoidReverseDuration = 260;
         _motor.moveBackward(SPEED_REVERSE_PCT);
@@ -514,7 +508,8 @@ private:
       } else {
         // เริ่มกวาดหัวสแกนซ้ายทันที
         _avoidStage = 2;
-        _motion.setHeadAngle(HEAD_SCAN_LEFT_DEG);
+        _avoidTimer = now;
+        _motion.setHeadAngle(scanLeftDeg);
         _behavior = "avoid";
         _reason = "scan_turn";
       }
@@ -527,7 +522,7 @@ private:
       _consecutiveBlocks = 0;
     }
 
-    // ทางข้างหน้าโล่ง (> AVOID_DISTANCE_THRESHOLD_CM หรือไม่มีสิ่งกีดขวาง) -> เดินหน้าสำรวจเต็มกำลัง Direct Drive
+    // ทางข้างหน้าโล่ง (> avoidThreshold หรือไม่มีสิ่งกีดขวาง) -> เดินหน้าสำรวจเต็มกำลัง Direct Drive
     _motor.moveForward(); // ขับเคลื่อน Direct Digital Full Drive 100% ต่อเนื่อง
     _behavior = "roam";
     _reason = "roam_cruise";
@@ -540,18 +535,11 @@ private:
       _triggerRandomEntertainment(now);
     }
 
-    // ถ้ากำลังเล่นเพลงอยู่ ให้วนท่าเต้นต่อเนื่อง
-    if (_song.isPlaying()) {
-      if (_motion.isMoving() == false) {
-        _triggerRandomDance();
-      }
-    }
-
     // Serial Debug Monitor (Rate-limited 400ms)
     if (now - _lastLogTime >= 400) {
       _lastLogTime = now;
-      Serial.printf("[ROAM & FUN] Dist: %.1f cm | Move: %s | Song: %s\n",
-                    dist, _behavior, _song.isPlaying() ? "Playing" : "Idle");
+      Serial.printf("[ROAM & FUN] Dist: %.1f cm (Thresh: %.0f) | Move: %s | Song: %s\n",
+                    dist, avoidThreshold, _behavior, _song.isPlaying() ? "Playing" : "Idle");
     }
   }
 
