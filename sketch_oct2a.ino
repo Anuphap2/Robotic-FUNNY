@@ -383,6 +383,14 @@ void setup() {
   sensorManager.begin();
   songPlayer.begin();
   motionPlayer.begin();
+  if (robotSettings.get(SERVO_ENABLED)) {
+    motionPlayer.setHeadAngle(70);
+    delay(180);
+    motionPlayer.setHeadAngle(110);
+    delay(180);
+    motionPlayer.toCenter();
+    Serial.println("[SERVO] Startup self-test sweep completed.");
+  }
 
   // Initialize Display
   if (!faceEngine.begin()) {
