@@ -44,6 +44,8 @@ public:
     _navigationAvoiding(false),
     _nextEntertainmentTime(0),
     _lastLogTime(0),
+    _lastStartleAt(0),
+    _hasStartled(false),
     _behavior("observe"),
     _reason("inactive") {}
 
@@ -52,6 +54,7 @@ public:
   }
 
   void setMode(RecreationMode mode, bool center = true) {
+    _sensor.consumeLoudSound();
     _motor.stopMotors();
     _motion.freeze();
     _song.stop();
@@ -137,6 +140,7 @@ public:
   void update() {
     // 1. Showcase Mode: ตรวจสอบเพลงจบ
     if (_mode == MODE_SHOWCASE && _showcaseActive) {
+      _sensor.consumeLoudSound();
       if (!_song.isPlaying()) {
         _motion.toCenter();
         _face.setFace("happy");
@@ -150,14 +154,19 @@ public:
     // 2. Sound-Reactive Party Mode
     if (_mode == MODE_PARTY_BEAT) {
       _updatePartyMode();
+      _sensor.consumeLoudSound();
       return;
     }
 
     // 3. Autonomous Entertainment & Obstacle Avoidance (Interactive Mode)
     if (_mode == MODE_INTERACTIVE) {
       _updateInteractiveMode();
+      _startleOnLoudSound();
       return;
     }
+
+    // React while idle/manual too; party beat and showcase keep their own sound behavior.
+    if (_mode == MODE_MANUAL) _startleOnLoudSound();
   }
 
 private:
@@ -179,9 +188,20 @@ private:
 
   uint32_t         _nextEntertainmentTime;
   uint32_t         _lastLogTime;
+  uint32_t         _lastStartleAt;
+  bool             _hasStartled;
 
   const char*      _behavior;
   const char*      _reason;
+
+  void _startleOnLoudSound() {
+    if (!_sensor.consumeLoudSound()) return;
+    const uint32_t now = millis();
+    if ((_hasStartled && now - _lastStartleAt < 1800) || _song.isPlaying()) return;
+    _lastStartleAt = now; _hasStartled = true;
+    _face.setTemporaryFace("surprise", 1600);
+    _song.toneBeep(1400, 180);
+  }
 
   void _triggerRandomEntertainment(uint32_t now) {
     // 20% โอกาส: เล่นเสียง SFX ทักทายสดใส (ไม่ขยับแขน)

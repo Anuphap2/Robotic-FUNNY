@@ -16,7 +16,7 @@ public:
   void startCalibration() {
     _calibrating = robotSettings.get(MIC_ENABLED);
     _calibrationCount = 0; _calibrationSum = 0;
-    _volume = 0; _peak = 0; _beat = false;
+    _volume = 0; _peak = 0; _beat = false; _loudSound = false; _loudSoundArmed = true;
   }
   void applyConfig() {
     portENTER_CRITICAL(&_echoMux);
@@ -25,6 +25,7 @@ public:
     portEXIT_CRITICAL(&_echoMux);
     _reading.kind = SonarKind::Invalid;
     _distance = -1; _beat = false; _volume = 0; _peak = 0;
+    _loudSound = false; _loudSoundArmed = true;
     if (!robotSettings.get(MIC_ENABLED)) _calibrating = false;
   }
   void update() {
@@ -41,6 +42,12 @@ public:
         int weight = robotSettings.get(MIC_SMOOTH);
         _volume = (_volume * (100 - weight) + instant * weight) / 100;
         _peak = max(instant, max(0, _peak - 4));
+        const int loudThreshold = robotSettings.get(CLAP_THRESHOLD);
+        if (instant < max(1, loudThreshold / 2)) _loudSoundArmed = true;
+        if (_loudSoundArmed && instant > loudThreshold) {
+          _loudSound = true;
+          _loudSoundArmed = false;
+        }
         if (_volume > robotSettings.get(CLAP_THRESHOLD) && now - _lastBeat >= (uint32_t)robotSettings.get(BEAT_COOLDOWN)) {
           _lastBeat = now; _beat = true;
         }
@@ -63,12 +70,13 @@ public:
     bool found = _beat && millis() - _lastBeat < 500;
     _beat = false; return found;
   }
+  bool consumeLoudSound() { bool found = _loudSound; _loudSound = false; return found; }
   bool isObstacleNear(float thresholdCm = 20) const { return distanceValid() && _distance < thresholdCm; }
 private:
   int _baseline = 2000, _volume = 0, _peak = 0;
   float _distance = -1;
   SonarReading _reading;
-  bool _beat = false, _calibrating = false;
+  bool _beat = false, _calibrating = false, _loudSound = false, _loudSoundArmed = true;
   uint32_t _lastMic = 0, _lastBeat = 0, _lastSonar = 0, _lastDistance = 0;
   uint32_t _distanceSequence = 0;
   uint32_t _calibrationSum = 0;

@@ -15,7 +15,7 @@
 
 RobotSettings robotSettings;
 ConfigStore configStore;
-const char* const FIRMWARE_VERSION = "2.3.5";
+const char* const FIRMWARE_VERSION = "2.3.6";
 uint32_t maxLoopUs = 0;
 uint32_t driveBootId = 0;
 ManualDriveGuard manualDriveGuard;
