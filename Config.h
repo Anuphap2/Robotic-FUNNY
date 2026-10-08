@@ -55,19 +55,6 @@ const int PIN_B1B = 12; // Motor Right B
 #ifndef SPEED_REVERSE_PCT
 #define SPEED_REVERSE_PCT     100   // ถอยหลังเว้นระยะ 100% เต็มกำลัง (ไม่ให้อืด ไม่ลดกำลัง)
 #endif
-#ifndef SPEED_FOLLOW_SLOW
-#define SPEED_FOLLOW_SLOW     100
-#endif
-#ifndef SPEED_FOLLOW_MID
-#define SPEED_FOLLOW_MID      100
-#endif
-#ifndef SPEED_FOLLOW_FAST
-#define SPEED_FOLLOW_FAST     100
-#endif
-#ifndef SPEED_TURN_SEARCH
-#define SPEED_TURN_SEARCH     100   // หมุนเลี้ยวด้วยแรงบิด 100% เต็มกำลัง
-#endif
-
 // Obstacle Avoidance & Dead-end Maneuvers (ถอยหลังค้าง แล้วค่อยเลี้ยวหาทางใหม่)
 #ifndef AVOID_DISTANCE_THRESHOLD_CM
 #define AVOID_DISTANCE_THRESHOLD_CM 35.0f   // ระยะตรวจจับสิ่งกีดขวาง (cm) เริ่มต้น แนะนำ 35–45 cm เมื่อเซนเซอร์ติดบนหัว
@@ -78,11 +65,8 @@ const int PIN_B1B = 12; // Motor Right B
 #ifndef AVOID_DEADEND_HOLD_MS
 #define AVOID_DEADEND_HOLD_MS    1100   // เวลาถอยหลังค้างกรณีเจอทางตัน/มุมอับซ้ำซ้อน (ms)
 #endif
-#ifndef AVOID_TURN_MIN_MS
-#define AVOID_TURN_MIN_MS         450   // เวลาหมุนเลี้ยวขั้นต่ำ (ms)
-#endif
-#ifndef AVOID_TURN_MAX_MS
-#define AVOID_TURN_MAX_MS         650   // เวลาหมุนเลี้ยวสูงสุด (ms)
+#ifndef AVOID_TURN_MS
+#define AVOID_TURN_MS             600   // fixed turn duration; dead end uses twice this
 #endif
 
 // Head Servo Obstacle Scanning (สแกนซ้าย-ขวาแทนการหมุนตัวทั้งคัน)
@@ -90,13 +74,13 @@ const int PIN_B1B = 12; // Motor Right B
 #define HEAD_SCAN_CENTER_DEG      90    // มุมหน้าตรงปกติ (องศา)
 #endif
 #ifndef HEAD_SCAN_LEFT_DEG
-#define HEAD_SCAN_LEFT_DEG       145    // มุมกวาดมองซ้าย (องศา)
+#define HEAD_SCAN_LEFT_DEG       150    // มุมกวาดมองซ้าย (องศา)
 #endif
 #ifndef HEAD_SCAN_RIGHT_DEG
-#define HEAD_SCAN_RIGHT_DEG       35    // มุมกวาดมองขวา (องศา)
+#define HEAD_SCAN_RIGHT_DEG       30    // มุมกวาดมองขวา (องศา)
 #endif
 #ifndef HEAD_SCAN_SETTLE_MS
-#define HEAD_SCAN_SETTLE_MS      240    // เวลาหยุดให้เซอร์โวหมุนและเซนเซอร์ยิงวัดระยะ (ms)
+#define HEAD_SCAN_SETTLE_MS      500    // เวลาหยุดให้เซอร์โวหมุนและเซนเซอร์ยิงวัดระยะ (ms)
 #endif
 
 

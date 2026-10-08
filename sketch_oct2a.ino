@@ -15,7 +15,7 @@
 
 RobotSettings robotSettings;
 ConfigStore configStore;
-const char* const FIRMWARE_VERSION = "2.3.4";
+const char* const FIRMWARE_VERSION = "2.3.5";
 uint32_t maxLoopUs = 0;
 uint32_t driveBootId = 0;
 ManualDriveGuard manualDriveGuard;
@@ -75,7 +75,7 @@ void handleTelemetry() {
   char json[1536];
   const auto motorSignal = motorController.signalStatus();
   int length = snprintf(json, sizeof(json),
-    "{\"vol\":%d,\"peak\":%d,\"dist\":%.1f,\"distanceValid\":%s,\"distanceAgeMs\":%lu,"
+    "{\"vol\":%d,\"peak\":%d,\"dist\":%.1f,\"distanceValid\":%s,\"distanceAgeMs\":%lu,\"distanceNoEcho\":%s,"
     "\"baseline\":%d,\"calibrating\":%s,\"mode\":\"%s\",\"dir\":\"%s\",\"face\":\"%s\","
     "\"timbre\":\"%s\",\"isPlaying\":%s,\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargest\":%lu,"
     "\"uptimeMs\":%lu,\"driveBootId\":%lu,\"maxLoopUs\":%lu,\"oledReady\":%s,\"servoReady\":%s,\"audioReady\":%s,\"motorReady\":%s,"
@@ -83,7 +83,7 @@ void handleTelemetry() {
     "\"motorEnabled\":%s,\"servoEnabled\":%s,\"headServoReady\":%s,\"leftServoReady\":%s,\"rightServoReady\":%s,\"motorInitError\":\"%s\",\"resetReason\":%d,"
     "\"motorGPIO\":%u,\"motorPending\":%s,\"motorCommandAgeMs\":%lu,\"motorLeaseMs\":%lu}",
     sensorManager.volume(), sensorManager.peakVolume(), sensorManager.distance(),
-    sensorManager.distanceValid() ? "true" : "false", (unsigned long)sensorManager.distanceAge(),
+    sensorManager.distanceValid() ? "true" : "false", (unsigned long)sensorManager.distanceAge(), sensorManager.distanceNoEcho() ? "true" : "false",
     sensorManager.baseline(), sensorManager.calibrating() ? "true" : "false",
     recreationEngine.modeString(), motorController.directionString(), faceEngine.currentFace().id,
     songPlayer.timbreName(), songPlayer.isPlaying() ? "true" : "false",
@@ -284,9 +284,15 @@ void handleAction() {
   else if (type == "mode") {
     if (cmd == "manual") { recreationEngine.setMode(MODE_MANUAL); ok = true; }
     else if (cmd == "party" && robotSettings.get(MIC_ENABLED) && robotSettings.get(SERVO_ENABLED)) { recreationEngine.setMode(MODE_PARTY_BEAT); ok = true; }
-    else if (cmd == "interactive" || cmd == "tracking" || cmd == "follow" || cmd == "follow_me") ok = recreationEngine.startInteractive();
-  } else if (type == "tracking" || type == "interactive") {
-    if (cmd == "start" || cmd == "follow" || cmd == "on" || cmd == "greet" || cmd == "roam") ok = recreationEngine.startInteractive();
+    else if (cmd == "interactive") {
+      if (!requireServos("head")) return;
+      ok = recreationEngine.startInteractive();
+    }
+  } else if (type == "interactive") {
+    if (cmd == "start" || cmd == "on" || cmd == "roam") {
+      if (!requireServos("head")) return;
+      ok = recreationEngine.startInteractive();
+    }
     else if (cmd == "stop" || cmd == "off") { stopAll(); ok = true; }
   } else if (type == "showcase") {
     String motion = server.hasArg("motion") ? server.arg("motion") : "dance";
@@ -353,7 +359,7 @@ void handleAction() {
     }
   }
   if (!ok) { sendError(422, "unknown_command_or_hardware_disabled"); return; }
-  if (type == "mode" || type == "interactive" || type == "tracking" || type == "showcase" || type == "motion" || type == "servo") {
+  if (type == "mode" || type == "interactive" || type == "showcase" || type == "motion" || type == "servo") {
     manualDriveGuard.cancelAll(millis());
   }
   server.sendHeader("Cache-Control", "no-store");

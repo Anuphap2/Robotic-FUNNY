@@ -8,6 +8,7 @@
 #include "MotionSystem.h"
 #include "MotorController.h"
 #include "SensorManager.h"
+#include "ObstacleAvoidance.h"
 
 // ============================================================================
 // RECREATION ENGINE (Autonomous Entertainment & Obstacle Avoidance Robot)
@@ -15,8 +16,8 @@
 // ออกแบบตามคำขอ:
 // 1. เดินสำรวจอิสระ (Roam) ไม่ชนกำแพง/สิ่งกีดขวาง (Obstacle Avoidance)
 // 2. ตัดฟังก์ชันเดินตามคนทิ้งทั้งหมด เพื่อไม่ให้เกิดความสับสนหรือลังเล
-// 3. สุ่มเล่นเพลง สุ่มเต้น สุ่มทักทาย สุ่มเปลี่ยนสีหน้า OLED สร้างความบันเทิงรอบตัว
-// 4. มอเตอร์ทำงานด้วยความเร็วสูงคงแรงบิด (85%-90%) ป้องกันล้อติดขัดจากน้ำหนักตัวถัง
+// 3. เพลงและสีหน้าทำงานแยกจากการนำทาง หัวและแขนไม่ขยับตามเพลงระหว่างเดิน
+// 4. หยุด -> ถอย -> สแกนขณะล้อหยุด -> คืนหัวตรง -> เลี้ยว -> วัดหน้าใหม่
 // ============================================================================
 
 enum RecreationMode {
@@ -39,21 +40,8 @@ public:
     _lastPartyMove(0),
     _showcaseActive(false),
     _partyRested(false),
-    _filteredDist(-1.0f),
-    _filterCount(0),
-    _dropoutCount(0),
-    _isAvoiding(false),
-    _avoidStage(0),
-    _avoidTimer(0),
-    _avoidReverseDuration(AVOID_REVERSE_HOLD_MS),
-    _avoidTurnDuration(500),
-    _avoidTurnRight(true),
-    _consecutiveBlocks(0),
-    _obstacleDetectCount(0),
-    _lastAvoidClearTime(0),
-    _distLeft(-1.0f),
-    _distRight(-1.0f),
-    _frontDistAtTrigger(0.0f),
+    _lastHeadAngle(-1),
+    _navigationAvoiding(false),
     _nextEntertainmentTime(0),
     _lastLogTime(0),
     _behavior("observe"),
@@ -67,19 +55,9 @@ public:
     _motor.stopMotors();
     _motion.freeze();
     _song.stop();
-    _filteredDist = -1.0f;
-    _filterCount = 0;
-    _dropoutCount = 0;
-    _isAvoiding = false;
-    _avoidStage = 0;
-    _avoidTimer = 0;
-    _avoidTurnRight = true;
-    _consecutiveBlocks = 0;
-    _obstacleDetectCount = 0;
-    _lastAvoidClearTime = 0;
-    _distLeft = -1.0f;
-    _distRight = -1.0f;
-    _frontDistAtTrigger = 0.0f;
+    _navigation.reset(millis());
+    _lastHeadAngle = -1;
+    _navigationAvoiding = false;
     _behavior = "observe";
     _reason = "inactive";
     _mode = mode;
@@ -106,16 +84,16 @@ public:
     }
   }
 
-  bool startInteractive(bool lockFront = false) {
-    (void)lockFront;
-    if (!robotSettings.get(SONAR_ENABLED) || !robotSettings.get(MOTOR_ENABLED) || !_motor.ready()) return false;
+  bool startInteractive() {
+    if (!robotSettings.get(SONAR_ENABLED) || !robotSettings.get(MOTOR_ENABLED) || !_motor.ready() ||
+        !robotSettings.get(SERVO_ENABLED) || !_motion.headReady() || !_scanAnglesValid()) return false;
     setMode(MODE_INTERACTIVE);
     return true;
   }
 
   const char* interactiveString() const { return "auto"; }
   const char* behaviorString() const { return _behavior; }
-  const char* decisionClass() const { return _isAvoiding ? "static_object" : "clear"; }
+  const char* decisionClass() const { return _navigationAvoiding ? "static_object" : strcmp(_behavior, "stop") == 0 ? "no_data" : "clear"; }
   const char* decisionReason() const { return _reason; }
   bool targetLocked() const { return false; }
   uint8_t movingVotes() const { return 0; }
@@ -195,25 +173,9 @@ private:
   bool             _showcaseActive;
   bool             _partyRested;
 
-  // Obstacle Avoidance & Filtering
-  float            _filteredDist;
-  float            _filterBuf[5];
-  uint8_t          _filterCount;
-  uint8_t          _dropoutCount;
-
-  bool             _isAvoiding;
-  uint8_t          _avoidStage;
-  uint32_t         _avoidTimer;
-  uint32_t         _avoidReverseDuration;
-  uint32_t         _avoidTurnDuration;
-  bool             _avoidTurnRight;
-  uint8_t          _consecutiveBlocks;
-  uint8_t          _obstacleDetectCount;
-  uint32_t         _lastAvoidClearTime;
-
-  float            _distLeft;
-  float            _distRight;
-  float            _frontDistAtTrigger;
+  ObstacleAvoidance _navigation;
+  int _lastHeadAngle;
+  bool _navigationAvoiding;
 
   uint32_t         _nextEntertainmentTime;
   uint32_t         _lastLogTime;
@@ -221,50 +183,6 @@ private:
   const char*      _behavior;
   const char*      _reason;
 
-  // --------------------------------------------------------------------------
-  // Fast 5-Sample Median Filter (กรอง Outlier 150cm กระโดดหลุดออกทันทีใน <0.5 µs)
-  // --------------------------------------------------------------------------
-  float _filterDistance(float raw) {
-    if (raw < 5.0f || raw > 220.0f) {
-      _dropoutCount++;
-      if (_dropoutCount >= 3) {
-        _filteredDist = -1.0f;
-      }
-      return _filteredDist;
-    }
-
-    _dropoutCount = 0;
-
-    if (_filterCount < 5) {
-      _filterBuf[_filterCount++] = raw;
-    } else {
-      for (int i = 0; i < 4; i++) {
-        _filterBuf[i] = _filterBuf[i + 1];
-      }
-      _filterBuf[4] = raw;
-    }
-
-    float sorted[5];
-    for (int i = 0; i < _filterCount; i++) sorted[i] = _filterBuf[i];
-
-    for (int i = 1; i < _filterCount; i++) {
-      float key = sorted[i];
-      int j = i - 1;
-      while (j >= 0 && sorted[j] > key) {
-        sorted[j + 1] = sorted[j];
-        j--;
-      }
-      sorted[j + 1] = key;
-    }
-
-    _filteredDist = sorted[_filterCount / 2];
-    return _filteredDist;
-  }
-
-  // --------------------------------------------------------------------------
-  // --------------------------------------------------------------------------
-  // สุ่มเลือกเพลงสร้างความบันเทิงระหว่างเดินสำรวจ (เล่นเฉพาะเพลง/SFX และเปลี่ยนสีหน้า แขนอยู่นิ่ง)
-  // --------------------------------------------------------------------------
   void _triggerRandomEntertainment(uint32_t now) {
     // 20% โอกาส: เล่นเสียง SFX ทักทายสดใส (ไม่ขยับแขน)
     if (random(0, 100) < 20) {
@@ -307,239 +225,63 @@ private:
   // --------------------------------------------------------------------------
   // โหมดเดินสำรวจ & หลบสิ่งกีดขวาง + ความบันเทิง (Interactive Roam & Entertainment)
   // --------------------------------------------------------------------------
+  bool _scanAnglesValid() const {
+    const int center = robotSettings.get(HEAD_CENTER);
+    const int left = constrain(center + HEAD_SCAN_LEFT_DEG - HEAD_SCAN_CENTER_DEG, 0, 180);
+    const int right = constrain(center + HEAD_SCAN_RIGHT_DEG - HEAD_SCAN_CENTER_DEG, 0, 180);
+    const int home = robotSettings.servoAngle(HEAD_MIN, center);
+    const int l = robotSettings.servoAngle(HEAD_MIN, left);
+    const int r = robotSettings.servoAngle(HEAD_MIN, right);
+    return l != home && r != home && l != r;
+  }
+
   void _updateInteractiveMode() {
-    uint32_t now = millis();
-
-    // 1. ตรวจสอบความพร้อมของเซนเซอร์และมอเตอร์
-    if (!robotSettings.get(MOTOR_ENABLED) || !robotSettings.get(SONAR_ENABLED) || !_motor.ready()) {
-      _behavior = "stop";
-      _reason = "hardware_disabled";
-      _motor.stopMotors();
+    const uint32_t now = millis();
+    if (!robotSettings.get(MOTOR_ENABLED) || !robotSettings.get(SONAR_ENABLED) || !_motor.ready() ||
+        !robotSettings.get(SERVO_ENABLED) || !_motion.headReady() || !_scanAnglesValid()) {
+      _motor.stopMotors(); _behavior = "stop"; _reason = "hardware_disabled";
+      _navigation.reset(now); _lastHeadAngle = -1; _navigationAvoiding = false;
       return;
     }
 
-    // 2. อ่านระยะทางผ่าน Fast Median Filter
-    float raw = _sensor.distanceValid() ? _sensor.distance() : -1.0f;
-    float dist = _filterDistance(raw);
-
-    // ดึงระยะตั้งค่าสำหรับเริ่มหลบสิ่งกีดขวาง (auto_stop_cm จาก Config)
-    const float avoidThreshold = (float)max((int32_t)15, robotSettings.get(AUTO_STOP));
-    const int centerDeg = robotSettings.get(HEAD_CENTER);
-    const int minDeg = robotSettings.get(HEAD_MIN);
-    const int maxDeg = robotSettings.get(HEAD_MAX);
-    const int scanLeftDeg = constrain(centerDeg + 55, minDeg, maxDeg);
-    const int scanRightDeg = constrain(centerDeg - 55, minDeg, maxDeg);
-
-    // ========================================================================
-    // PART A: หลบสิ่งกีดขวาง & หาทางใหม่ด้วย Servo Scan (แทนการหมุนตัวทั้งคัน)
-    // ========================================================================
-    if (_isAvoiding) {
-      uint32_t elapsed = now - _avoidTimer;
-
-      if (_avoidStage == 1) {
-        // ขั้นตอนที่ 1: ถอยหลังระยะสั้น (Micro-reverse) เมื่อประชิดกำแพงมากเกินไป
-        // เพื่อเว้นระยะปลอดภัยให้หัวหมุนกวาดได้โดยไม่ชนสิ่งกีดขวาง
-        _motor.moveBackward(SPEED_REVERSE_PCT);
-        _behavior = "avoid";
-        _reason = "escape_reverse";
-
-        if (elapsed >= _avoidReverseDuration) {
-          _motor.stopMotors();
-          // สลับเข้าสู่การกวาดหัวสแกนซ้าย
-          _avoidStage = 2;
-          _avoidTimer = now;
-          _motion.setHeadAngle(scanLeftDeg);
-          _behavior = "avoid";
-          _reason = "scan_turn";
-        }
-        return;
-      } else if (_avoidStage == 2) {
-        // ขั้นตอนที่ 2: เซอร์โวหัวหันมองซ้าย (scanLeftDeg)
-        _motor.stopMotors();
-        _behavior = "avoid";
-        _reason = "scan_turn";
-
-        if (elapsed >= HEAD_SCAN_SETTLE_MS) {
-          // อ่านระยะด้านซ้าย
-          _distLeft = _sensor.distanceValid() ? _sensor.distance() : -1.0f;
-          Serial.printf("[SCAN] Left (%d deg) -> Dist: %.1f cm\n", scanLeftDeg, _distLeft);
-
-          // สั่งเซอร์โวหัวหันกวาดไปทางขวา (scanRightDeg)
-          _avoidStage = 3;
-          _avoidTimer = now;
-          _motion.setHeadAngle(scanRightDeg);
-          _reason = "scan_right";
-        }
-        return;
-      } else if (_avoidStage == 3) {
-        // ขั้นตอนที่ 3: เซอร์โวหัวหันมองขวา (scanRightDeg)
-        _motor.stopMotors();
-        _behavior = "avoid";
-        _reason = "scan_right";
-
-        // หมุนกวาดมุมกว้างจากซ้ายสุดมาขวาสุด (+40ms settle time)
-        if (elapsed >= (HEAD_SCAN_SETTLE_MS + 40)) {
-          // อ่านระยะด้านขวา
-          _distRight = _sensor.distanceValid() ? _sensor.distance() : -1.0f;
-          Serial.printf("[SCAN] Right (%d deg) -> Dist: %.1f cm\n", scanRightDeg, _distRight);
-
-          // หมุนหัวกลับมาหน้าตรง (centerDeg)
-          _avoidStage = 4;
-          _avoidTimer = now;
-          _motion.setHeadAngle(centerDeg);
-        }
-        return;
-      } else if (_avoidStage == 4) {
-        // ขั้นตอนที่ 4: คืนหัวหน้าตรง และตัดสินใจเลือกทิศทาง
-        _motor.stopMotors();
-
-        if (elapsed >= 120) {
-          // คำนวณคะแนนพื้นที่ว่าง (Clearance Score):
-          // ถ้าเซนเซอร์วัดไม่พบ (<=0 หรือ > 200 cm) แสดงว่าเปิดโล่งไม่มีสิ่งกีดขวางในระยะ ให้คะแนน 999 cm
-          float scoreL = (_distLeft <= 0.0f || _distLeft > 200.0f) ? 999.0f : _distLeft;
-          float scoreR = (_distRight <= 0.0f || _distRight > 200.0f) ? 999.0f : _distRight;
-
-          Serial.printf("[SCAN DECISION] Left score: %.1f cm | Right score: %.1f cm (Avoid Threshold: %.1f cm)\n",
-                        scoreL, scoreR, avoidThreshold);
-
-          // กรณีเจอทางตัน/มุมอับ (Dead-end): ทั้งสองด้านมีสิ่งกีดขวางขวางอยู่ (<= avoidThreshold)
-          if (scoreL <= avoidThreshold && scoreR <= avoidThreshold) {
-            _consecutiveBlocks++;
-            _avoidStage = 5; // Long Reverse Hold
-            _avoidTimer = now;
-            _avoidReverseDuration = AVOID_DEADEND_HOLD_MS;
-            _avoidTurnDuration = random(750, 950); // หมุนตัวกลับหลังหัน (U-turn) ออกจากซอยตัน
-            _avoidTurnRight = (scoreR >= scoreL);
-            _behavior = "avoid";
-            _reason = "escape_reverse";
-            _face.setTemporaryFace("surprise", 1500);
-            _song.toneBeep(660, 120);
-            Serial.printf("[SCAN] DEAD END TRAP! Both sides blocked (L:%.1f, R:%.1f). Reversing %lu ms -> U-turn\n",
-                          scoreL, scoreR, (unsigned long)_avoidReverseDuration);
-          } else {
-            // มีทางออกเปิดโล่ง: เลือกเลี้ยวไปด้านที่มีช่องว่างมากกว่า
-            _consecutiveBlocks = 0;
-            if (scoreL > scoreR) {
-              _avoidTurnRight = false; // เลือกเลี้ยวซ้าย
-              _reason = "scan_turn";
-              Serial.println("[SCAN] Selected LEFT (Clearer path)");
-            } else {
-              _avoidTurnRight = true;  // เลือกเลี้ยวขวา
-              _reason = "scan_right";
-              Serial.println("[SCAN] Selected RIGHT (Clearer path)");
-            }
-
-            _avoidTurnDuration = random(AVOID_TURN_MIN_MS, AVOID_TURN_MAX_MS);
-            _avoidStage = 6; // เริ่มหมุนเลี้ยวตัวถังทันที
-            _avoidTimer = now;
-            _behavior = "avoid";
-          }
-        }
-        return;
-      } else if (_avoidStage == 5) {
-        // ขั้นตอนที่ 5: ถอยหลังยาวกรณีติดในมุมอับ/ทางตัน
-        _motor.moveBackward(SPEED_REVERSE_PCT);
-        _behavior = "avoid";
-        _reason = "escape_reverse";
-
-        if (elapsed >= _avoidReverseDuration) {
-          _motor.stopMotors();
-          _avoidStage = 6; // หมุน U-turn
-          _avoidTimer = now;
-        }
-        return;
-      } else if (_avoidStage == 6) {
-        // ขั้นตอนที่ 6: หมุนตัวถังเลี้ยวไปทางที่เปิดโล่ง (High Torque Pivot Turn 100%)
-        if (_avoidTurnRight) {
-          _motor.turnRight(SPEED_ROAM_TURN);
-          _reason = "scan_right";
-        } else {
-          _motor.turnLeft(SPEED_ROAM_TURN);
-          _reason = "scan_turn";
-        }
-        _behavior = "avoid";
-
-        if (elapsed >= _avoidTurnDuration) {
-          // เลี้ยวเสร็จสิ้น! คืนสู่การเดินหน้าสำรวจต่อทันที
-          _motor.stopMotors();
-          _isAvoiding = false;
-          _avoidStage = 0;
-          _lastAvoidClearTime = now;
-          _filterCount = 0;
-          _dropoutCount = 0;
-          _obstacleDetectCount = 0;
-          _motion.setHeadAngle(centerDeg);
-          Serial.println("[SCAN] Avoidance complete. Resuming forward roam!");
-        }
-        return;
-      }
-    }
-
-    // ตรวจพบสิ่งกีดขวางหรือกำแพง (<= avoidThreshold)
-    // กรองยืนยัน 2 ครั้งติดกัน (Debounce) ป้องกันคลื่นสะท้อนพื้นหลอกให้หุ่นเบรกหมุนตัวซ้ำซาก
-    if (dist > 0 && dist <= avoidThreshold) {
-      _obstacleDetectCount++;
-    } else {
-      _obstacleDetectCount = 0;
-    }
-
-    if (_obstacleDetectCount >= 2) {
-      _obstacleDetectCount = 0;
+    ObstacleAvoidance::Settings cfg;
+    cfg.center = robotSettings.get(HEAD_CENTER);
+    // Logical angles: MotionPlayer applies reverse/trim/physical limits once.
+    cfg.left = constrain(cfg.center + HEAD_SCAN_LEFT_DEG - HEAD_SCAN_CENTER_DEG, 0, 180);
+    cfg.right = constrain(cfg.center + HEAD_SCAN_RIGHT_DEG - HEAD_SCAN_CENTER_DEG, 0, 180);
+    cfg.stopCm = robotSettings.get(AUTO_STOP);
+    cfg.settleMs = HEAD_SCAN_SETTLE_MS;
+    cfg.reverseMs = AVOID_REVERSE_HOLD_MS;
+    cfg.deadReverseMs = AVOID_DEADEND_HOLD_MS;
+    cfg.turnMs = AVOID_TURN_MS;
+    cfg.maxAgeMs = _sensor.distanceMaxAge();
+    const auto command = _navigation.update(now, _sensor.reading(), cfg);
+    _navigationAvoiding = command.avoiding;
+    _reason = command.reason;
+    _behavior = command.avoiding ? "avoid" : command.drive == ObstacleAvoidance::Forward ? "roam" : "stop";
+    if (command.head != _lastHeadAngle) {
+      // Stop before moving the scan head. Never renew the same servo target every loop.
       _motor.stopMotors();
-      _frontDistAtTrigger = dist;
-      _isAvoiding = true;
-      _avoidTimer = now;
-
-      if (!robotSettings.get(SERVO_ENABLED)) {
-        // กรณีปิดเซอร์โวในระบบ: ถอยหลังแล้วสุ่มเลี้ยวแบบดั้งเดิม
-        _avoidStage = 5;
-        _avoidReverseDuration = AVOID_REVERSE_HOLD_MS;
-        _avoidTurnDuration = random(AVOID_TURN_MIN_MS, AVOID_TURN_MAX_MS);
-        _avoidTurnRight = (random(0, 2) == 0);
-        _behavior = "avoid";
-        _reason = "escape_reverse";
-      } else if (_frontDistAtTrigger > 0 && _frontDistAtTrigger < (avoidThreshold * 0.55f)) {
-        // ถ้าชิดสิ่งกีดขวางมากเกินไป ถอยระยะสั้นๆ ก่อน เพื่อเปิดช่องว่างให้หัวหมุนกวาดได้
-        _avoidStage = 1;
-        _avoidReverseDuration = 260;
-        _motor.moveBackward(SPEED_REVERSE_PCT);
-        _behavior = "avoid";
-        _reason = "escape_reverse";
-      } else {
-        // เริ่มกวาดหัวสแกนซ้ายทันที
-        _avoidStage = 2;
-        _avoidTimer = now;
-        _motion.setHeadAngle(scanLeftDeg);
-        _behavior = "avoid";
-        _reason = "scan_turn";
+      if (!_motion.setHeadAngle(command.head)) {
+        _behavior = "stop"; _reason = "servo_write_failed";
+        _navigation.reset(now); _navigationAvoiding = false;
+        return;
       }
-      _face.setTemporaryFace("surprise", 1200);
-      return;
+      _lastHeadAngle = command.head;
     }
-
-    // ถ้าเดินหน้าต่อได้ราบรื่นเกิน 3 วินาที ให้รีเซ็ตประวัติทางตัน
-    if (now - _lastAvoidClearTime > 3000 && _consecutiveBlocks > 0) {
-      _consecutiveBlocks = 0;
+    switch (command.drive) {
+      case ObstacleAvoidance::Forward: _motor.driveFor(MotorController::FORWARD, command.leaseMs); break;
+      case ObstacleAvoidance::Backward: _motor.driveFor(MotorController::BACKWARD, command.leaseMs); break;
+      case ObstacleAvoidance::Left: _motor.driveFor(MotorController::LEFT, command.leaseMs); break;
+      case ObstacleAvoidance::Right: _motor.driveFor(MotorController::RIGHT, command.leaseMs); break;
+      default: _motor.stopMotors(); break;
     }
-
-    // ทางข้างหน้าโล่ง (> avoidThreshold หรือไม่มีสิ่งกีดขวาง) -> เดินหน้าสำรวจเต็มกำลัง Direct Drive
-    _motor.moveForward(); // ขับเคลื่อน Direct Digital Full Drive 100% ต่อเนื่อง
-    _behavior = "roam";
-    _reason = "roam_cruise";
-
-    // ========================================================================
-    // PART B: ระบบสร้างความบันเทิงอัตโนมัติ (Random Entertainment Engine)
-    // ========================================================================
-    // ถ้ายังไม่ได้เล่นเพลง และถึงเวลาสุ่มความบันเทิง
-    if (!_song.isPlaying() && now >= _nextEntertainmentTime) {
+    if (!command.avoiding && !_song.isPlaying() && static_cast<int32_t>(now - _nextEntertainmentTime) >= 0)
       _triggerRandomEntertainment(now);
-    }
-
-    // Serial Debug Monitor (Rate-limited 400ms)
     if (now - _lastLogTime >= 400) {
       _lastLogTime = now;
-      Serial.printf("[ROAM & FUN] Dist: %.1f cm (Thresh: %.0f) | Move: %s | Song: %s\n",
-                    dist, avoidThreshold, _behavior, _song.isPlaying() ? "Playing" : "Idle");
+      Serial.printf("[AVOID] stage=%d reason=%s front=%.1f L=%.1f R=%.1f\n",
+                    _navigation.stage(), _reason, _sensor.distance(), _navigation.leftCm(), _navigation.rightCm());
     }
   }
 

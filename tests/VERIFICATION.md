@@ -1,129 +1,103 @@
-# Verification — firmware 2.3.4
+# Verification — firmware 2.3.5
 
-Checked on 8 October 2026 (Asia/Bangkok). No firmware was uploaded and no
-physical robot was driven. The user reports that the web stays connected while
-all servos and motors remain still. The user subsequently reports firmware
-2.3.3, HIGH/LOW motor GPIO and failed servo initialization. No measured rail
-voltage or serial boot log has been supplied, so the physical cause remains
-unconfirmed.
+Checked on 8 October 2026 (Asia/Bangkok). The sensor model supplied by the user
+is HC-SR05. No firmware was uploaded and no physical robot was driven.
 
-## Software checks
+## Navigation and measurement checks
 
-Node executes the actual functions extracted from WebUI.h:
+The installed ESP32 compiler evaluates the actual constexpr production
+ObstacleAvoidance and SonarReading code with -std=c++17 -Wall -Wextra
+-fsyntax-only (tests/obstacle-policy.cpp). Nineteen static assertions cover:
 
-- 13 configuration/telemetry tests: 51 settings, bounds, types, servo limits,
-  distances, unknown/GPIO fields, blank values, v1/v2 imports and Interactive UI.
-- 9 manual-control regressions: outstanding request/stop/abort ordering,
-  heartbeat timing, no parallel drive queue, direction/mode changes, late
-  responses, old button release, stalled requests without automatic movement
-  retry, page exit, telemetry cancellation, offline stop and reboot clocks.
-- 7 hardware UI tests: live enable flags override stale config; each servo's
-  status is independent; watchdog errors and panic/brownout differ; old telemetry
-  does not invent readiness; GPIO polarity/low outputs/pending transitions are
-  reported; individual servo tests use only the chosen slider and reject drafts;
-  detailed servo/audio error messages include the firmware version.
+- Startup centering and waiting for a trigger after servo settling; stale
+  completions never permit forward motion. Long valid ranges remain usable.
+- A roughly 2 cm echo triggers a stop, brake, fixed 650 ms reverse, 200 ms rest.
+- Both left/right choices, no return on either side, repeated old measurements,
+  and triggers issued just before the 500 ms settling deadline.
+- Wheels stopped during each scan, head centered during reverse and turn,
+  fixed 600 ms turn, and a fresh front measurement after turning.
+- Both sides blocked: finite 1100 ms reverse, 200 ms rest, 1200 ms turn.
+  Equal blocked/clear sides deterministically select right.
+- Invalid/noise/missing-edge/stuck-high results are never considered open space.
+  A newly invalid front result stops a previous forward drive.
+- No-return pulses and silent LOW timeout are distinct from invalid samples;
+  saved short trigger intervals/timeouts are clamped to HC-SR05 timing guards.
+- Maneuver leases shrink to 1 ms at their deadline; repeated use of one forward
+  sample also reduces its remaining lease rather than extending its lifetime.
+- Cancellation and millis rollover do not resume an earlier maneuver.
 
+No replacement navigation implementation is used in these checks. Sensor GPIO
+and interrupt behavior are built with the real ESP32 core; physical echo timing
+and servo movement still require board measurements.
+
+## Dashboard and existing regressions
+
+Node executes actual functions extracted from WebUI.h:
+
+- 12 configuration/navigation UI checks including v1/v2 imports, 51 stable
+  persisted slots, bounds/types, physical servo homes, obsolete distances
+  unable to restrict obstacle settings, legacy fields hidden during search,
+  scanning distinct from turning, and no target-follow presentation.
+- 9 existing manual-control ordering, stop, abort, heartbeat, page-exit,
+  telemetry cancellation, and reboot checks.
+- 7 existing hardware UI checks for enable flags, independent servo readiness,
+  motor initialization, GPIO readback and detailed action errors.
+
+Result: 28 passed, 0 failed.
 Command: node --test tests/config-ui.test.mjs tests/manual-drive-ui.test.mjs
   tests/hardware-ui.test.mjs
-Result: 29 passed, 0 failed. Dashboard and preview JavaScript syntax passed.
 
-The installed ESP32 C++ compiler, C++17, -fsyntax-only, also passed:
-
-- Ten assertions executing production ManualDriveGuard.h, covering expiry,
-  future timestamps, rollover, stop/cancellation ordering, duplicate sequences,
-  four-page capacity, slot reuse and invalid packets.
-- Thirteen assertions per compilation executing production ServoOutput.h and
-  ServoSignal.h, in four peripheral modes: normal attachment, attachment failure,
-  wrong frequency and write failure. Covers 50 Hz / 20 ms frames, saved pulse
-  calibration, angle clamping, 16-bit duty, invalid settings, independent
-  channels, detach/retry and error propagation. Only the peripheral calls are
-  stubbed; these checks do not prove actual electrical output. Test stubs and
-  assertions are not linked into the firmware.
-
-Telemetry format fits its fixed 1,536-byte buffer: a conservative 1,271-byte
-estimate uses 32-byte quoted values, full uint32/32-bit integer widths, full
-boolean literals and a wider distance than this sensor reports. The runtime
-snprintf truncation check remains. Diagnostics use fixed stack buffers; response
-transmission retains the web core's existing allocations.
-Git diff --check passed.
-
-## Confirmed servo startup regression
-
-The installed core 3.3.12 ledcReadFreq checks ledcRead (duty) and returns zero
-when duty is zero. Firmware 2.3.3 checked that helper immediately after attach,
-before writing the saved rest pose, and detached successful channels. This is a
-confirmed software defect that matches the user's failed-servo status.
-
-Firmware 2.3.4 reads the assigned timer's frequency via ledc_get_freq, using the
-core peripheral manager's channel/timer metadata. It verifies the expected
-channel and 16-bit resolution as well as 50 Hz. Readiness no longer depends on
-duty or the first frame's latch timing. No temporary test pose or delay was added.
-The stubs now model the pin-level helper returning zero; a negative control
-compiled the previous committed driver against those stubs and failed the
-startup assertion as expected. The corrected production driver passes all four
-modes. This regression was missed by the earlier stub which always returned 50.
-
-Manual three-axis positions and motion frames propagate write failures instead
-of reporting success. Motion freezes on a failed frame. Typed showcase/motion
-and axis commands check enabled/individual servo readiness, and distinguish
-unknown IDs, disabled audio, audio initialization and servo write failures.
-No motor signal level, drive speed or lease was altered in this follow-up.
+The ESP32 compiler also passes tests/manual-drive-policy.cpp and all four
+SERVO_TEST_MODE variants of tests/servo-output-policy.cpp (only peripheral calls
+stubbed). These do not prove electrical servo signals or wheel rotation.
 
 ## ESP32 build
 
-Final source compiled successfully for esp32:esp32:esp32, ESP32 core 3.3.12,
---warnings all, using installed libraries. No project-source diagnostics.
+Final source compiles successfully for esp32:esp32:esp32 with ESP32 core 3.3.12
+and installed libraries, --warnings all. No project-source diagnostics.
 
-- Program: 1,088,098 / 1,310,720 bytes (83%).
-- Static RAM: 52,512 / 327,680 bytes (16%); 275,168 before runtime allocation.
-- ESP32Servo is no longer a firmware dependency. The new servo driver uses the
-  core's attachment result and duty-independent timer readback, channels 0/1/2,
-  50 Hz/16-bit.
-  Buzzer remains channel 6/10-bit; core 3.3.12 assigns timers dynamically according
-  to compatible frequency and resolution, not a fixed channel-to-timer mapping.
-- Ten source files match the final build snapshot: sketch, servo output/signal,
-  motion, motor, song, dashboard, RuntimeConfig, Config and RecreationEngine.
-  Arduino-generated prototypes/line markers are excluded from this comparison.
+- Program: 1,083,586 / 1,310,720 bytes (82%).
+- Static RAM: 52,512 / 327,680 bytes (16%); 275,168 bytes before runtime use.
+- All 17 firmware source files match the staged source snapshot byte for
+  byte. Compiled headers and SensorManager.cpp also match workspace source
+  after removing Arduino-generated line markers and normalizing line endings.
+  Generated main contains Firmware 2.3.5; its added prototypes are excluded
+  from source-hash comparison.
+- Dashboard JavaScript syntax and git diff --check pass.
 
-The installed ESP32PWM attachPin path sets its attachedState before checking
-ledcAttachChannel and retains that state on failure. This is a verified false
-readiness path, not evidence that it failed on the user's board. The currently
-installed ESP32Servo setTimerWidth guards a zero width difference, so a division
-by zero is not established as the cause of this incident. External libraries
-were only read, not modified by this fix.
+Build: arduino-cli --config-file .build/cli.yaml compile
+  --fqbn esp32:esp32:esp32 --warnings all
+  --build-path .build/obstacle-2.3.5 .build/source/sketch_oct2a
+The staged source includes only firmware files; no test code is linked.
+An initial build also passed before final motor-lease/timing updates; figures
+above belong to the final source, not the initial snapshot.
 
-## Preserved state and hardware limits
+## Compatibility and limits
 
-All 13 GPIO assignments match starting revision 0192c93. Existing settings,
-key order, bounds/defaults and NVS v2 schema remain compatible. No reset or
-config erase. Config.h and RecreationEngine.h user edits are left uncommitted.
-The user's motor GPIO refresh/digitalWrite changes are preserved in the tested
-working tree and left uncommitted. This follow-up does not edit the motor file;
-the previous fix committed only watchdog lifecycle, diagnostics and a stale-drive
-fallback in that file.
+All original GPIO assignments remain. NVS v2 key order and 51-slot record layout
+remain; no reset or storage write was performed. Legacy behavior fields remain
+in records/imports/exports but have no effect on navigation and are hidden.
+Sonar defaults become 60 ms / 40000 us, timeout maximum widens to 60000 us.
+Saved shorter settings are preserved in storage and guarded at runtime.
 
-Web commands now distinguish disabled devices from driver initialization errors.
-A retry first stops motors/audio/motion/autonomy, cancels manual drive, reuses
-an existing timer handle and reattaches enabled servos at their saved rest angles.
-It respects saved disable flags. Single-axis tests can operate a healthy servo
-without requiring the other two outputs to be ready.
+HC-SR05 real-module timing has not been measured. SRF05 manufacturer documentation
+reports approximately 30 ms no-return pulses and at least 50 ms between triggers:
+https://www.robot-electronics.co.uk/htm/srf05tech.htm
+Firmware uses 60 ms minimum trigger spacing / 40 ms minimum wait as conservative
+operating choices, accepts long out-of-range/timeout pulses as NoEcho, and keeps
+stuck HIGH or malformed edges Invalid. Silent LOW NoEcho cannot distinguish an
+open area from a disconnected/dead sensor. Forward motion on NoEcho is the
+requested behavior, not a claim that empty space was positively measured.
 
-Motor GPIO levels come from gpio_get_level on the original output pins. This
-core's OUTPUT mode also enables input readback. The snapshot holds the motor
-lock; it reports logic levels, pending direction, command age and lease. Both
-telemetry and action responses include it, so manual driving can display the
-acknowledged signal state while telemetry is paused. It cannot measure driver
-voltage, current, encoder/RPM or confirm physical wheel rotation.
+The previous obstacle code read the latest echo after a fixed delay regardless
+of when it was triggered, repeatedly filtered the same measurement, could discard
+near/far valid readings, randomly chose turn duration, and immediately resumed
+front driving after a turn. New code uses measurement start times, distinct result
+kinds, fixed phases and front reacquisition. Motor driveFor uses the existing
+independent 2 ms watchdog and direction dead time with an explicit remaining
+lease. Manual-drive signals, speed and timestamp ordering are unchanged.
 
-Existing direct digital drive, 5 ms direction dead time, independent 2 ms motor
-timer, 400 ms timestamp-based manual lease, 100 ms heartbeat and 350 ms web-drive
-request timeout remain. setSpeed/setTrim are still no-ops in the user's baseline.
-No physical wheel speed calibration is claimed.
-
-Real-board checks remain: upload and reload the dashboard; confirm saved enables
-and per-axis status; with wheels lifted test stop/release/direction changes and
-individual servos; measure power and driver outputs under load if GPIO changes
-but motors stay still. The user reports a 5V 3A stepdown; its label alone does
-not prove the voltage during motor/servo startup. README contains the powered-off
-motor-output swap check. tests/preview.mjs is a browser fixture only, not the
-production hardware lifecycle or a measurement of ESP32 latency.
+No encoder, rear/edge sensor or physical motion test exists. Turn/reverse duration
+is a command time, not a measured angle or travel distance. Test lifted wheels,
+clear front, each side blocked, both sides blocked, no return, and cancellation
+on the actual robot before evaluating navigation on the floor.

@@ -8,6 +8,7 @@
 
 // GPIO assignments deliberately live only in Config.h. All editable values are
 // bounded integers; one schema drives validation, defaults and the web form.
+// Persisted field order/keys are unchanged. The legacy group is inert and hidden.
 #define ROBOT_CONFIG_FIELDS(X) \
  X(MOTOR_ENABLED,"motor_enabled","เปิดใช้งานมอเตอร์","motor",0,1,1,"bool","ปิดแล้วทุกคำสั่งขับเคลื่อนจะถูกปฏิเสธ") \
  X(MOTOR_TIMEOUT,"motor_timeout_ms","เวลาหยุดเมื่อขาดคำสั่ง","motor",300,5000,2000,"ms","Watchdog เปิดเสมอ เว็บส่งทุก 100 ms และตัดเมื่อคำสั่งสดขาดหายไม่เกิน 400 ms หรือตามค่านี้ถ้าสั้นกว่า") \
@@ -38,8 +39,8 @@
  X(BEAT_COOLDOWN,"beat_cooldown_ms","ระยะห่างระหว่าง beat","mic",100,2000,280,"ms","ป้องกันตรวจจังหวะเดียวซ้ำหลายครั้ง") \
  X(MIC_SMOOTH,"mic_smooth_pct","น้ำหนักข้อมูลใหม่","mic",1,100,63,"%","ค่าน้อยกรองนุ่ม ค่ามากตอบสนองเร็ว") \
  X(SONAR_ENABLED,"sonar_enabled","เปิด ultrasonic","sonar",0,1,1,"bool","ปิดแล้วระยะเป็นไม่มีข้อมูล") \
- X(SONAR_INTERVAL,"sonar_interval_ms","รอบวัดระยะ","sonar",20,1000,30,"ms","ความถี่สูง 30 ms เพื่อ track วัตถุที่เคลื่อนที่ได้ฉับไว") \
- X(SONAR_TIMEOUT,"sonar_timeout_us","เวลารอ echo สูงสุด","sonar",2000,30000,12000,"us","12000 us (~205 cm) หลุดไว ไม่รอค้างเพื่อส่งพัลส์ถี่ๆ ได้") \
+ X(SONAR_INTERVAL,"sonar_interval_ms","รอบวัดระยะ","sonar",20,1000,60,"ms","HC-SR05: รอบจริงไม่น้อยกว่า 60 ms แม้ config เก่าตั้งไว้สั้นกว่า") \
+ X(SONAR_TIMEOUT,"sonar_timeout_us","เวลารอ echo สูงสุด","sonar",2000,60000,40000,"us","HC-SR05: เวลารอจริงไม่น้อยกว่า 40000 us เพื่อให้พัลส์ไม่มี echo จบก่อนยิงใหม่") \
  X(DISTANCE_OFFSET,"distance_offset_mm","ชดเชยระยะ","sonar",-200,200,0,"mm","ชดเชยตำแหน่งติดตั้งเซนเซอร์") \
  X(AUDIO_ENABLED,"audio_enabled","เปิดเสียง buzzer","audio",0,1,1,"bool","ปิดแล้วหยุดเพลงและสั่งขาเสียง LOW") \
  X(AUDIO_VOLUME,"audio_volume_pct","ระดับ PWM เสียง","audio",0,100,100,"%","สัดส่วน duty ไม่ใช่ระดับ dB; 0 คือเงียบ") \
@@ -47,19 +48,19 @@
  X(OLED_ENABLED,"oled_enabled","เปิดจอ OLED","oled",0,1,1,"bool","ปิดจอได้โดยไม่เปลี่ยน I2C หรือ address") \
  X(OLED_CONTRAST,"oled_contrast","ความเข้มจอ","oled",0,255,127,"level","ส่งคำสั่ง contrast ไปยัง SH1106") \
  X(OLED_ANIM,"oled_anim_ms","รอบแอนิเมชัน","oled",100,1000,300,"ms","ค่าสูงลดภาระการส่งข้อมูล I2C") \
- X(PROX_CLOSE,"proximity_close_cm","ระยะใกล้เกินไป","behavior",5,100,18,"cm","โหมด Interactive แสดงตกใจในช่วงนี้") \
- X(PROX_GREETING,"proximity_greeting_cm","ระยะทักทายสูงสุด","behavior",10,200,45,"cm","ต้องมากกว่าระยะใกล้เกินไป") \
- X(PROX_COOLDOWN,"proximity_cooldown_ms","พักระหว่างการทักทาย","behavior",500,10000,1500,"ms","ทักทายครั้งเดียวต่อการพบ ต้องออกห่างต่อเนื่อง 3 วินาทีและเว้นอย่างน้อย 10 วินาทีก่อนทักทายใหม่") \
+ X(PROX_CLOSE,"proximity_close_cm","ค่ารุ่นเก่า: proximity_close_cm","legacy",5,100,18,"cm","เก็บเพื่ออ่าน config รุ่นเก่าเท่านั้น ไม่มีผลต่อการเดินหลบ") \
+ X(PROX_GREETING,"proximity_greeting_cm","ค่ารุ่นเก่า: proximity_greeting_cm","legacy",10,200,45,"cm","เก็บเพื่ออ่าน config รุ่นเก่าเท่านั้น ไม่มีผลต่อการเดินหลบ") \
+ X(PROX_COOLDOWN,"proximity_cooldown_ms","ค่ารุ่นเก่า: proximity_cooldown_ms","legacy",500,10000,1500,"ms","เก็บเพื่ออ่าน config รุ่นเก่าเท่านั้น ไม่มีผลต่อการเดินหลบ") \
  X(TELEMETRY_INTERVAL,"telemetry_interval_ms","รอบข้อมูลหน้าเว็บ","system",250,5000,500,"ms","เรียกครั้งถัดไปเมื่อครั้งก่อนเสร็จ หยุดเมื่อซ่อนแท็บ") \
  X(AUTO_STOP,"auto_stop_cm","ระยะตรวจจับหลบกำแพง","autonomy",15,100,35,"cm","ระยะห่างจากกำแพง/สิ่งกีดขวางเพื่อเริ่มสแกนหลบ (cm) แนะนำ 35–45 cm เมื่อเซนเซอร์ติดบนหัว") \
- X(AUTO_CLEAR,"auto_clear_cm","ระยะโล่งสำหรับเดิน","autonomy",30,250,60,"cm","เริ่มที่ค่านี้หรือระยะหยุดบวก 13 cm แล้วแต่ว่าค่าใดมากกว่า หยุดเดินหน้าเมื่อระยะลดลงอีก 8 cm") \
- X(FOLLOW_DISTANCE,"follow_distance_cm","ระยะตามเป้าหมาย","autonomy",30,150,65,"cm","เริ่มตามเมื่อไกลกว่านี้อีก 5 cm หยุดที่ระยะนี้ ใช้มัธยฐาน 3 ค่าเพื่อลดการสั่งเดิน–หยุดสลับ") \
- X(FOLLOW_MAX,"follow_max_cm","ระยะติดตามสูงสุด","autonomy",60,300,180,"cm","เกินระยะนี้จะหยุด ปลดเป้าหมาย แล้วกลับสำรวจอัตโนมัติ") \
- X(TARGET_DELTA,"target_delta_cm","การเปลี่ยนระยะขั้นต่ำ","autonomy",3,40,5,"cm","ระยะเปลี่ยนขณะหุ่นอยู่นิ่ง = ผู้สมัครเป้าหมายเคลื่อนที่ ไม่ยืนยันว่าเป็นคน") \
- X(AUTO_PULSE,"auto_pulse_ms","เวลาคุ้มครองการเดินขั้นต่ำ","autonomy",60,300,120,"ms","เดินต่อด้วย echo ใหม่เท่านั้น ระยะ watchdog ปรับตามรอบวัดเป็น 150–600 ms และไม่เกิน timeout มอเตอร์") \
- X(AUTO_OBSERVE,"auto_observe_ms","จังหวะสังเกตและพักหลบ","autonomy",300,3000,400,"ms","สำรวจต่อเนื่องอย่างน้อย 3 วินาทีหรือ 4 เท่าค่านี้ก่อนพักสังเกต ใช้ค่านี้พักก่อนลองหลบอีกด้าน") \
- X(AUTO_TURN,"auto_turn_ms","เวลาเลี้ยวสแกนแต่ละช่วง","autonomy",60,250,140,"ms","เลี้ยวเป็นช่วงแล้ววัดใหม่ หากไม่พบทางจะลองสลับด้าน ไม่มีเซนเซอร์ด้านข้าง") \
- X(AUTO_TURN_LIMIT,"auto_turn_limit","จำนวนเลี้ยวต่อชุด","autonomy",1,8,4,"times","ครบชุดแล้วยังไม่พบทางจะพักตามจังหวะสังเกต ก่อนลองอีกด้านเอง ไม่ต้องเริ่มโหมดใหม่")
+ X(AUTO_CLEAR,"auto_clear_cm","ค่ารุ่นเก่า: auto_clear_cm","legacy",30,250,60,"cm","เก็บเพื่ออ่าน config รุ่นเก่าเท่านั้น ไม่มีผลต่อการเดินหลบ") \
+ X(FOLLOW_DISTANCE,"follow_distance_cm","ค่ารุ่นเก่า: follow_distance_cm","legacy",30,150,65,"cm","เก็บเพื่ออ่าน config รุ่นเก่าเท่านั้น ไม่มีผลต่อการเดินหลบ") \
+ X(FOLLOW_MAX,"follow_max_cm","ค่ารุ่นเก่า: follow_max_cm","legacy",60,300,180,"cm","เก็บเพื่ออ่าน config รุ่นเก่าเท่านั้น ไม่มีผลต่อการเดินหลบ") \
+ X(TARGET_DELTA,"target_delta_cm","ค่ารุ่นเก่า: target_delta_cm","legacy",3,40,5,"cm","เก็บเพื่ออ่าน config รุ่นเก่าเท่านั้น ไม่มีผลต่อการเดินหลบ") \
+ X(AUTO_PULSE,"auto_pulse_ms","ค่ารุ่นเก่า: auto_pulse_ms","legacy",60,300,120,"ms","เก็บเพื่ออ่าน config รุ่นเก่าเท่านั้น ไม่มีผลต่อการเดินหลบ") \
+ X(AUTO_OBSERVE,"auto_observe_ms","ค่ารุ่นเก่า: auto_observe_ms","legacy",300,3000,400,"ms","เก็บเพื่ออ่าน config รุ่นเก่าเท่านั้น ไม่มีผลต่อการเดินหลบ") \
+ X(AUTO_TURN,"auto_turn_ms","ค่ารุ่นเก่า: auto_turn_ms","legacy",60,250,140,"ms","เก็บเพื่ออ่าน config รุ่นเก่าเท่านั้น ไม่มีผลต่อการเดินหลบ") \
+ X(AUTO_TURN_LIMIT,"auto_turn_limit","ค่ารุ่นเก่า: auto_turn_limit","legacy",1,8,4,"times","เก็บเพื่ออ่าน config รุ่นเก่าเท่านั้น ไม่มีผลต่อการเดินหลบ")
 
 enum ConfigField {
 #define CONFIG_ENUM(id, key, label, group, lo, hi, def, unit, hint) id,
@@ -100,9 +101,6 @@ struct RobotSettings {
       if (lo >= hi || home < lo || home > hi) { error = CONFIG_SCHEMA[base].key; return false; }
     }
     if (get(SERVO_MIN_US_CFG) >= get(SERVO_MAX_US_CFG)) { error = "servo_min_us"; return false; }
-    if (get(PROX_CLOSE) >= get(PROX_GREETING)) { error = "proximity_close_cm"; return false; }
-    if (get(AUTO_STOP) >= get(AUTO_CLEAR)) { error = "auto_clear_cm"; return false; }
-    if (get(FOLLOW_DISTANCE) <= get(AUTO_STOP) || get(FOLLOW_DISTANCE) + 5 >= get(FOLLOW_MAX)) { error = "follow_distance_cm"; return false; }
     error = nullptr; return true;
   }
   int servoAngle(ConfigField base, int logical) const {

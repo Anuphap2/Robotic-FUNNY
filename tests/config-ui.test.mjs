@@ -33,10 +33,12 @@ test('all three servo homes respect physical limits after reverse and trim',()=>
     assert.throws(()=>validate({...defaults(),[axis+'_min']:20,[axis+'_max']:160,[axis+'_center']:0,[axis+'_reverse']:1}));
   }
 });
-test('proximity zones cannot overlap or collapse',()=>{
-  assert.throws(()=>validate({...defaults(),proximity_close_cm:45,proximity_greeting_cm:45}));
-  assert.throws(()=>validate({...defaults(),proximity_close_cm:80,proximity_greeting_cm:45}));
+test('obsolete distances remain loadable without restricting obstacle settings',()=>{
+  validate({...defaults(),proximity_close_cm:80,proximity_greeting_cm:45,auto_stop_cm:100,auto_clear_cm:30,follow_distance_cm:30,follow_max_cm:60});
+  for(const key of ['follow_distance_cm','follow_max_cm','target_delta_cm','proximity_close_cm','auto_turn_ms'])
+    assert.equal(schema.find(s=>s.key===key).group,'legacy');
 });
+
 test('imports cannot include GPIO keys, unknown settings or missing fields',()=>{
   assert.throws(()=>validate({...defaults(),PIN_SERVO_HEAD:2}));
   const missing=defaults();delete missing.audio_enabled;assert.throws(()=>validate(missing));
@@ -48,24 +50,6 @@ test('blank numeric form values are not silently exported as zero',()=>{
   const formSource=source.slice(source.indexOf('function valuesFromForm('),source.indexOf('function dirtyKeys('));
   const read=runInNewContext(formSource+'; valuesFromForm',{config:{schema},$:id=>inputs[id]});
   assert.equal(Number.isNaN(read().head_trim),true);assert.throws(()=>validate(read()));
-});
-test('post-greeting telemetry describes route finding instead of holding or greeting again',()=>{
-  let rows;
-  const renderSource=source.slice(source.indexOf('const decisionLabels='),source.indexOf('function updateTelemetry(d)'));
-  const render=runInNewContext(renderSource+'; updateInteractive',{
-    $:()=>({}),facts:(id,values)=>rows=values
-  });
-  for(const decision of ['greeting_done','post_greeting_scan','target_idle_escape']){
-    render({mode:'interactive',behavior:'avoid',targetClass:'static_object',decision,targetLocked:false});
-    assert.ok(rows[1][1].includes('หาทาง'),decision);
-    assert.equal(rows[2][1],'ยังไม่จับเป้าหมาย');
-  }
-});
-test('autonomous clearance and following distances respect stop and tracking zones',()=>{
-  assert.throws(()=>validate({...defaults(),auto_stop_cm:60,auto_clear_cm:60}));
-  assert.throws(()=>validate({...defaults(),auto_stop_cm:65,follow_distance_cm:65}));
-  assert.throws(()=>validate({...defaults(),follow_distance_cm:100,follow_max_cm:105}));
-  validate({...defaults(),auto_stop_cm:25,auto_clear_cm:30,follow_distance_cm:30,follow_max_cm:60});
 });
 const importerSource=source.slice(source.indexOf('function importValues('),source.indexOf("$('importConfig').onchange="));
 const importValues=runInNewContext(validatorSource+importerSource+'; importValues',{config:{schema}});
@@ -99,28 +83,35 @@ test('Interactive starts with one mode command and has no behavior or target-con
   controls.stopInteractive.onclick();
   assert.equal(calls[1][0],'interactive');assert.equal(calls[1][1],'stop');
 });
-test('automatic telemetry renders changing behavior and target lock without a confirmation step',()=>{
+test('avoidance telemetry has no target acquisition or follow presentation',()=>{
   const controls={interactiveState:{}};let rows;
   const renderSource=source.slice(source.indexOf('const decisionLabels='),source.indexOf('function updateTelemetry(d)'));
   const render=runInNewContext(renderSource+'; updateInteractive',{
     $:id=>controls[id],facts:(id,values)=>rows=values
   });
-  for(const behavior of ['roam','follow','greet','avoid','observe','stop']){
-    render({mode:'interactive',behavior,targetClass:'moving_target',decision:'follow_cruise',targetLocked:behavior==='follow',movingVotes:2});
+  for(const behavior of ['roam','avoid','stop']){
+    render({mode:'interactive',behavior,targetClass:'static_object',decision:'scan_left',targetLocked:true});
     assert.ok(controls.interactiveState.textContent.startsWith('อัตโนมัติ'));
-    assert.equal(rows.length,4);assert.ok(!rows.some(row=>row[0].includes('ยืนยัน')));
-    if(behavior==='follow')assert.ok(rows[2][1].startsWith('จับอัตโนมัติ'));
+    assert.equal(rows.length,4);assert.equal(rows[2][0],'สันทนาการ');
+    assert.ok(!JSON.stringify(rows).includes('เป้าหมาย'));
   }
   render({mode:'manual'});assert.equal(controls.interactiveState.textContent,'ยังไม่เริ่ม');
 });
-test('telemetry explains continuous drive, periodic observation and both avoidance directions',()=>{
+
+test('telemetry distinguishes scanning from turning and explains no echo',()=>{
   let rows;
   const renderSource=source.slice(source.indexOf('const decisionLabels='),source.indexOf('function updateTelemetry(d)'));
   const render=runInNewContext(renderSource+'; updateInteractive',{
     $:()=>({}),facts:(id,values)=>rows=values
   });
-  for(const [decision,expected] of [['roam_cruise','ต่อเนื่อง'],['follow_cruise','ต่อเนื่อง'],['periodic_scan','พักสังเกต'],['obstacle_brake','หยุด'],['avoid_retry','อีกด้าน'],['scan_turn','ซ้าย'],['scan_right','ขวา']]){
-    render({mode:'interactive',behavior:'roam',targetClass:'static_object',decision});
+  for(const [decision,expected] of [['roam_cruise','ต่อเนื่อง'],['no_echo_clear','เดินต่อ'],['measurement_wait','รอผลวัด'],['obstacle_brake','หยุด'],['scan_left','สแกนซ้าย'],['scan_right','สแกนขวา'],['avoid_left','เลี้ยวซ้าย'],['avoid_right','เลี้ยวขวา']]){
+    render({mode:'interactive',behavior:'avoid',targetClass:'static_object',decision});
     assert.ok(rows[1][1].includes(expected),decision);
   }
+});
+
+test('legacy fields stay hidden even while searching, but remain in saved config',()=>{
+  assert.ok(source.includes("details.hidden=group==='legacy'"));
+  assert.ok(source.includes("g.hidden=g.dataset.group==='legacy'||"));
+  assert.equal(schema.length,51);
 });

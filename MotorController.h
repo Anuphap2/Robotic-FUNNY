@@ -119,6 +119,15 @@ public:
     return request(FORWARD, constrain(leaseMs, 150UL, 600UL));
   }
 
+  // Navigation renews only the remaining maneuver/measurement lifetime. The
+  // independent timer stops at that deadline even while HTTP blocks the loop.
+  bool driveFor(Direction direction, uint32_t remainingMs) {
+    if (!remainingMs || (direction != FORWARD && direction != BACKWARD && direction != LEFT && direction != RIGHT)) {
+      stop(); return false;
+    }
+    return request(direction, remainingMs);
+  }
+
   bool handleCommand(const String& cmd, uint32_t lease = 0) {
     if (cmd == "stop") { stop(); return true; }
     if (cmd == "forward") return request(FORWARD, lease);
