@@ -568,19 +568,19 @@ private:
 
       switch (_partyStep) {
         case 0:
-          _motion.setManualAngles(65, 140, 40);
+          _motion.setManualAngles(robotSettings.get(HEAD_CENTER), 140, 40);
           _face.setFace("music");
           break;
         case 1:
-          _motion.setManualAngles(115, 40, 140);
+          _motion.setManualAngles(robotSettings.get(HEAD_CENTER), 40, 140);
           _face.setFace("happy");
           break;
         case 2:
-          _motion.setManualAngles(90, 150, 30);
+          _motion.setManualAngles(robotSettings.get(HEAD_CENTER), 150, 30);
           _face.setFace("wink");
           break;
         case 3:
-          _motion.setManualAngles(80, 50, 130);
+          _motion.setManualAngles(robotSettings.get(HEAD_CENTER), 50, 130);
           _face.setFace("cool");
           break;
       }

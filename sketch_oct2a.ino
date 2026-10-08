@@ -384,12 +384,8 @@ void setup() {
   songPlayer.begin();
   motionPlayer.begin();
   if (robotSettings.get(SERVO_ENABLED)) {
-    motionPlayer.setHeadAngle(70);
-    delay(180);
-    motionPlayer.setHeadAngle(110);
-    delay(180);
     motionPlayer.toCenter();
-    Serial.println("[SERVO] Startup self-test sweep completed.");
+    Serial.println("[SERVO] Servos centered.");
   }
 
   // Initialize Display

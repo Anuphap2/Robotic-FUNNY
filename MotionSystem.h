@@ -34,22 +34,22 @@ const ServoKeyframe FRAMES_CENTER[] = {
   {90, 30, 150, 250}
 };
 
-// 2. Party Dance (สันทนาการแดนซ์ ส่ายหัว สลับแขน)
+// 2. Party Dance (สันทนาการแดนซ์ ขยับแขนสลับซ้ายขวา หัวหน้าตรง)
 const ServoKeyframe FRAMES_DANCE[] = {
-  {60,  120, 150, 180},
-  {120, 30,  60,  180},
-  {60,  120, 150, 180},
-  {120, 30,  60,  180},
+  {90,  120, 150, 180},
+  {90,  30,  60,  180},
+  {90,  120, 150, 180},
+  {90,  30,  60,  180},
   {90,  140, 40,  200},
   {90,  30,  150, 200}
 };
 
-// 3. Chicken Wing Flap (เต้นไก่ย่างถูกเผา กระพือปีกไก่)
+// 3. Chicken Wing Flap (เต้นไก่ย่างถูกเผา กระพือปีกสองข้าง)
 const ServoKeyframe FRAMES_CHICKEN[] = {
-  {75,  130, 50,  150},
-  {105, 30,  150, 150},
-  {75,  130, 50,  150},
-  {105, 30,  150, 150},
+  {90,  130, 50,  150},
+  {90,  30,  150, 150},
+  {90,  130, 50,  150},
+  {90,  30,  150, 150},
   {90,  140, 40,  180},
   {90,  30,  150, 180}
 };
@@ -57,17 +57,17 @@ const ServoKeyframe FRAMES_CHICKEN[] = {
 // 4. Wave Hello (โบกมือทักทาย)
 const ServoKeyframe FRAMES_WAVE[] = {
   {90,  150, 150, 200},
-  {80,  110, 150, 180},
-  {100, 150, 150, 180},
-  {80,  110, 150, 180},
+  {90,  110, 150, 180},
+  {90,  150, 150, 180},
+  {90,  110, 150, 180},
   {90,  30,  150, 250}
 };
 
 // 5. Cheer & Hooray (ยกสองแขนไชโยเฉลิมฉลอง)
 const ServoKeyframe FRAMES_CHEER[] = {
   {90,  150, 30,  250},
-  {80,  160, 20,  200},
-  {100, 160, 20,  200},
+  {90,  160, 20,  200},
+  {90,  160, 20,  200},
   {90,  160, 20,  250},
   {90,  30,  150, 250}
 };
@@ -80,47 +80,47 @@ const ServoKeyframe FRAMES_HUG[] = {
 
 // 7. Disco Fever (ชูแขนเฉียงขึ้นลงสไตล์ดิสโก้)
 const ServoKeyframe FRAMES_DISCO[] = {
-  {60,  160, 150, 220},
+  {90,  160, 150, 220},
   {90,  30,  150, 150},
-  {120, 30,  20,  220},
+  {90,  30,  20,  220},
   {90,  30,  150, 150}
 };
 
-// 8. Head Shake / Wonder (ส่ายหัวสงสัย)
+// 8. Arm Sway / Wonder (สวิงแขนสองข้าง)
 const ServoKeyframe FRAMES_HEAD_SHAKE[] = {
-  {55,  40,  140, 180},
-  {125, 40,  140, 180},
-  {65,  40,  140, 180},
-  {115, 40,  140, 180},
+  {90,  40,  140, 180},
+  {90,  120, 60,  180},
+  {90,  40,  140, 180},
+  {90,  120, 60,  180},
   {90,  30,  150, 200}
 };
 
-// 9. SIX-SEVEN Meme Dance (ท่าไวรัล 6-7 ชั่งน้ำหนักมือสลับขึ้นลงพร้อมส่ายหัวสุดกวน)
+// 9. SIX-SEVEN Meme Dance (ท่าไวรัล 6-7 ชั่งน้ำหนักมือสลับขึ้นลง)
 const ServoKeyframe FRAMES_SIX_SEVEN[] = {
   // Prep / Ready
   {90,  70,  110, 180},
 
-  // Hit 1: "SIX!" (Left hand up, Right hand down, head tilt left)
-  {65,  140, 155, 230},
-  {72,  125, 145, 100}, // Micro-bounce recoil
+  // Hit 1: "SIX!" (Left hand up, Right hand down)
+  {90,  140, 155, 230},
+  {90,  125, 145, 100}, // Micro-bounce recoil
 
-  // Hit 1: "SEVEN!" (Left hand down, Right hand up, head tilt right)
-  {115, 35,  45,  230},
-  {108, 48,  58,  100}, // Micro-bounce recoil
+  // Hit 1: "SEVEN!" (Left hand down, Right hand up)
+  {90,  35,  45,  230},
+  {90,  48,  58,  100}, // Micro-bounce recoil
 
   // Hit 2: "SIX!"
-  {65,  140, 155, 230},
-  {72,  125, 145, 100},
+  {90,  140, 155, 230},
+  {90,  125, 145, 100},
 
   // Hit 2: "SEVEN!"
-  {115, 35,  45,  230},
-  {108, 48,  58,  100},
+  {90,  35,  45,  230},
+  {90,  48,  58,  100},
 
   // Hit 3 (Fast drill combo: 6 - 7 - 6 - 7!)
-  {60,  145, 160, 170}, // 6!
-  {120, 30,  40,  170}, // 7!
-  {60,  145, 160, 170}, // 6!
-  {120, 30,  40,  170}, // 7!
+  {90,  145, 160, 170}, // 6!
+  {90,  30,  40,  170}, // 7!
+  {90,  145, 160, 170}, // 6!
+  {90,  30,  40,  170}, // 7!
 
   // Signature balanced scale freeze
   {90,  95,  85,  450},
@@ -280,7 +280,11 @@ private:
     const bool rightOK = _servoArmR.write(robotSettings.servoAngle(RIGHT_MIN, right));
     return headOK && leftOK && rightOK;
   }
-  bool _applyFrame(const ServoKeyframe& frame) { return writeAngles(frame.head, frame.armL, frame.armR); }
+  bool _applyFrame(const ServoKeyframe& frame) {
+    // ล็อกเซอร์โวสแกน (หัว) ไว้ที่กึ่งกลางเสมอ (HEAD_CENTER) ระหว่างเล่นท่าทาง/เพลง
+    // ขยับเฉพาะแขนซ้ายและขวา เพื่อให้หัวหันตรงสำหรับวัดระยะตอนเดินอัตโนมัติ
+    return writeAngles(robotSettings.get(HEAD_CENTER), frame.armL, frame.armR);
+  }
 };
 
 #endif // MOTION_SYSTEM_H
