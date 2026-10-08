@@ -162,7 +162,6 @@ private:
   uint32_t _timeout = 2000;
   uint32_t _lease = 2000;
   bool _enabled = false, _leftReverse = false, _rightReverse = false, _timerReady = false;
-  int8_t _pinA1A = -1, _pinA1B = -1, _pinB1A = -1, _pinB1B = -1;
   esp_timer_handle_t _watchdog = nullptr;
   esp_err_t _initError = ESP_ERR_INVALID_STATE;
   mutable portMUX_TYPE _mux = portMUX_INITIALIZER_UNLOCKED;
@@ -182,7 +181,9 @@ private:
       portEXIT_CRITICAL(&_mux);
       return;
     }
-    if (_dir == STOPPED) {
+    if (_dir != STOPPED && _pending == STOPPED) {
+      applyOutputsLocked(); // รักษาเอาต์พุตให้ขับ HIGH เต็มรางอย่างต่อเนื่อง
+    } else if (_dir == STOPPED && _pending == STOPPED) {
       outputsLow();
     }
     portEXIT_CRITICAL(&_mux);
@@ -194,19 +195,11 @@ private:
     _pending = STOPPED;
   }
 
-  void setPinCached(int pin, int8_t& current, bool high) {
-    int8_t desired = high ? 1 : 0;
-    if (current != desired) {
-      current = desired;
-      gpio_set_level(static_cast<gpio_num_t>(pin), desired);
-    }
-  }
-
   void outputsLow() {
-    setPinCached(PIN_A1A, _pinA1A, false);
-    setPinCached(PIN_A1B, _pinA1B, false);
-    setPinCached(PIN_B1A, _pinB1A, false);
-    setPinCached(PIN_B1B, _pinB1B, false);
+    digitalWrite(PIN_A1A, LOW);
+    digitalWrite(PIN_A1B, LOW);
+    digitalWrite(PIN_B1A, LOW);
+    digitalWrite(PIN_B1B, LOW);
   }
 
   bool request(Direction next, uint32_t lease = 0) {
@@ -214,7 +207,15 @@ private:
     if (!_enabled || !_timerReady) { portEXIT_CRITICAL(&_mux); return false; }
     _lastCommandTime = millis();
     _lease = lease ? min(lease, _timeout) : _timeout;
-    if (next == _dir || next == _pending) { portEXIT_CRITICAL(&_mux); return true; }
+    if (next == _dir) {
+      applyOutputsLocked(); // สั่งย้ำให้ขา GPIO ขับเต็มกำลังทันที
+      portEXIT_CRITICAL(&_mux);
+      return true;
+    }
+    if (next == _pending) {
+      portEXIT_CRITICAL(&_mux);
+      return true;
+    }
     outputsLow(); _dir = STOPPED; _pending = next; _switchTime = millis();
     portEXIT_CRITICAL(&_mux);
     return true;
@@ -226,16 +227,14 @@ private:
       return;
     }
 
-    bool leftForward = _dir == FORWARD || _dir == RIGHT || _dir == SPIN;
-    bool rightForward = _dir == FORWARD || _dir == LEFT;
-    leftForward ^= _leftReverse;
-    rightForward ^= _rightReverse;
+    bool leftForward = (_dir == FORWARD || _dir == RIGHT || _dir == SPIN) ^ _leftReverse;
+    bool rightForward = (_dir == FORWARD || _dir == LEFT) ^ _rightReverse;
 
-    // Direct Digital Saturation Drive: Continuous 100% full rail voltage
-    setPinCached(PIN_A1A, _pinA1A, leftForward);
-    setPinCached(PIN_A1B, _pinA1B, !leftForward);
-    setPinCached(PIN_B1A, _pinB1A, rightForward);
-    setPinCached(PIN_B1B, _pinB1B, !rightForward);
+    // Direct Digital Saturation Drive: ยิงไฟเต็มราง HIGH/LOW ตรงๆ 100%
+    digitalWrite(PIN_A1A, leftForward ? HIGH : LOW);
+    digitalWrite(PIN_A1B, leftForward ? LOW : HIGH);
+    digitalWrite(PIN_B1A, rightForward ? HIGH : LOW);
+    digitalWrite(PIN_B1B, rightForward ? LOW : HIGH);
   }
 };
 #endif

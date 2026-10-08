@@ -70,7 +70,7 @@ const int PIN_B1B = 12; // Motor Right B
 
 // Obstacle Avoidance & Dead-end Maneuvers (ถอยหลังค้าง แล้วค่อยเลี้ยวหาทางใหม่)
 #ifndef AVOID_DISTANCE_THRESHOLD_CM
-#define AVOID_DISTANCE_THRESHOLD_CM 32.0f   // ระยะตรวจจับสิ่งกีดขวาง (cm) พอดี ไม่ตื่นตระหนกเบรกบ่อยเกินไป
+#define AVOID_DISTANCE_THRESHOLD_CM 25.0f   // ระยะตรวจจับสิ่งกีดขวาง (cm) พอดี ไม่โดนแสงสะท้อนจากพื้นหลอก
 #endif
 #ifndef AVOID_REVERSE_HOLD_MS
 #define AVOID_REVERSE_HOLD_MS     650   // เวลาถอยหลังค้าง (ms) เพื่อดึงตัวถังออกจากกำแพง
@@ -83,6 +83,20 @@ const int PIN_B1B = 12; // Motor Right B
 #endif
 #ifndef AVOID_TURN_MAX_MS
 #define AVOID_TURN_MAX_MS         650   // เวลาหมุนเลี้ยวสูงสุด (ms)
+#endif
+
+// Head Servo Obstacle Scanning (สแกนซ้าย-ขวาแทนการหมุนตัวทั้งคัน)
+#ifndef HEAD_SCAN_CENTER_DEG
+#define HEAD_SCAN_CENTER_DEG      90    // มุมหน้าตรงปกติ (องศา)
+#endif
+#ifndef HEAD_SCAN_LEFT_DEG
+#define HEAD_SCAN_LEFT_DEG       145    // มุมกวาดมองซ้าย (องศา)
+#endif
+#ifndef HEAD_SCAN_RIGHT_DEG
+#define HEAD_SCAN_RIGHT_DEG       35    // มุมกวาดมองขวา (องศา)
+#endif
+#ifndef HEAD_SCAN_SETTLE_MS
+#define HEAD_SCAN_SETTLE_MS      240    // เวลาหยุดให้เซอร์โวหมุนและเซนเซอร์ยิงวัดระยะ (ms)
 #endif
 
 

@@ -49,7 +49,11 @@ public:
     _avoidTurnDuration(500),
     _avoidTurnRight(true),
     _consecutiveBlocks(0),
+    _obstacleDetectCount(0),
     _lastAvoidClearTime(0),
+    _distLeft(-1.0f),
+    _distRight(-1.0f),
+    _frontDistAtTrigger(0.0f),
     _nextEntertainmentTime(0),
     _lastLogTime(0),
     _behavior("observe"),
@@ -71,7 +75,11 @@ public:
     _avoidTimer = 0;
     _avoidTurnRight = true;
     _consecutiveBlocks = 0;
+    _obstacleDetectCount = 0;
     _lastAvoidClearTime = 0;
+    _distLeft = -1.0f;
+    _distRight = -1.0f;
+    _frontDistAtTrigger = 0.0f;
     _behavior = "observe";
     _reason = "inactive";
     _mode = mode;
@@ -199,7 +207,12 @@ private:
   uint32_t         _avoidTurnDuration;
   bool             _avoidTurnRight;
   uint8_t          _consecutiveBlocks;
+  uint8_t          _obstacleDetectCount;
   uint32_t         _lastAvoidClearTime;
+
+  float            _distLeft;
+  float            _distRight;
+  float            _frontDistAtTrigger;
 
   uint32_t         _nextEntertainmentTime;
   uint32_t         _lastLogTime;
@@ -325,84 +338,187 @@ private:
     float dist = _filterDistance(raw);
 
     // ========================================================================
-    // PART A: หลบสิ่งกีดขวาง & หาทางใหม่ (ถอยหลังค้าง แล้วค่อยเลี้ยว)
+    // PART A: หลบสิ่งกีดขวาง & หาทางใหม่ด้วย Servo Scan (แทนการหมุนตัวทั้งคัน)
     // ========================================================================
     if (_isAvoiding) {
       uint32_t elapsed = now - _avoidTimer;
 
       if (_avoidStage == 1) {
-        // ขั้นตอนที่ 1: ถอยหลังค้าง (Sustained Reverse Hold)
-        // ดึงตัวถังหนักออกจากกำแพงหรือมุมตัน เพื่อเปิดระยะห่างด้านหน้าอย่างปลอดภัย
+        // ขั้นตอนที่ 1: ถอยหลังระยะสั้น (Micro-reverse) เมื่อประชิดกำแพงมากเกินไป (< 14 cm)
+        // เพื่อเว้นระยะปลอดภัยให้หัวหมุนกวาดได้โดยไม่ชนสิ่งกีดขวาง
         _motor.moveBackward(SPEED_REVERSE_PCT);
         _behavior = "avoid";
         _reason = "escape_reverse";
 
         if (elapsed >= _avoidReverseDuration) {
           _motor.stopMotors();
+          // สลับเข้าสู่การกวาดหัวสแกนซ้าย
           _avoidStage = 2;
           _avoidTimer = now;
+          _motion.setHeadAngle(HEAD_SCAN_LEFT_DEG);
+          _behavior = "avoid";
+          _reason = "scan_turn";
         }
         return;
       } else if (_avoidStage == 2) {
-        // ขั้นตอนที่ 2: หยุดพักสั้นๆ (90 ms) ให้มอเตอร์ตัดแรงเฉื่อยและป้องกันไฟกระชาก
+        // ขั้นตอนที่ 2: เซอร์โวหัวหันมองซ้าย (HEAD_SCAN_LEFT_DEG)
         _motor.stopMotors();
         _behavior = "avoid";
-        _reason = "escape_reverse";
+        _reason = "scan_turn";
 
-        if (elapsed >= 90) {
+        if (elapsed >= HEAD_SCAN_SETTLE_MS) {
+          // อ่านระยะด้านซ้าย
+          _distLeft = _sensor.distanceValid() ? _sensor.distance() : -1.0f;
+          Serial.printf("[SCAN] Left (%d deg) -> Dist: %.1f cm\n", HEAD_SCAN_LEFT_DEG, _distLeft);
+
+          // สั่งเซอร์โวหัวหันกวาดไปทางขวา (HEAD_SCAN_RIGHT_DEG)
           _avoidStage = 3;
           _avoidTimer = now;
+          _motion.setHeadAngle(HEAD_SCAN_RIGHT_DEG);
+          _reason = "scan_right";
         }
         return;
       } else if (_avoidStage == 3) {
-        // ขั้นตอนที่ 3: หมุนเลี้ยวหาทางใหม่ (High Torque Pivot Turn 100%)
-        if (_avoidTurnRight) _motor.turnRight(SPEED_ROAM_TURN);
-        else _motor.turnLeft(SPEED_ROAM_TURN);
+        // ขั้นตอนที่ 3: เซอร์โวหัวหันมองขวา (HEAD_SCAN_RIGHT_DEG)
+        _motor.stopMotors();
         _behavior = "avoid";
-        _reason = "avoid_turn";
+        _reason = "scan_right";
+
+        // หมุนกวาดมุมกว้างจากซ้ายสุดมาขวาสุด (+40ms settle time)
+        if (elapsed >= (HEAD_SCAN_SETTLE_MS + 40)) {
+          // อ่านระยะด้านขวา
+          _distRight = _sensor.distanceValid() ? _sensor.distance() : -1.0f;
+          Serial.printf("[SCAN] Right (%d deg) -> Dist: %.1f cm\n", HEAD_SCAN_RIGHT_DEG, _distRight);
+
+          // หมุนหัวกลับมาหน้าตรง (Center)
+          _avoidStage = 4;
+          _avoidTimer = now;
+          _motion.setHeadAngle(robotSettings.get(HEAD_CENTER));
+        }
+        return;
+      } else if (_avoidStage == 4) {
+        // ขั้นตอนที่ 4: คืนหัวหน้าตรง และตัดสินใจเลือกทิศทาง
+        _motor.stopMotors();
+
+        if (elapsed >= 120) {
+          // คำนวณคะแนนพื้นที่ว่าง (Clearance Score):
+          // ถ้าเซนเซอร์วัดไม่พบ (<=0 หรือ > 200 cm) แสดงว่าเปิดโล่งไม่มีสิ่งกีดขวางในระยะ ให้คะแนน 999 cm
+          float scoreL = (_distLeft <= 0.0f || _distLeft > 200.0f) ? 999.0f : _distLeft;
+          float scoreR = (_distRight <= 0.0f || _distRight > 200.0f) ? 999.0f : _distRight;
+
+          Serial.printf("[SCAN DECISION] Left score: %.1f cm | Right score: %.1f cm\n", scoreL, scoreR);
+
+          // กรณีเจอทางตัน/มุมอับ (Dead-end): ทั้งสองด้านมีสิ่งกีดขวางขวางอยู่ (< AVOID_DISTANCE_THRESHOLD_CM)
+          if (scoreL <= AVOID_DISTANCE_THRESHOLD_CM && scoreR <= AVOID_DISTANCE_THRESHOLD_CM) {
+            _consecutiveBlocks++;
+            _avoidStage = 5; // Long Reverse Hold
+            _avoidTimer = now;
+            _avoidReverseDuration = AVOID_DEADEND_HOLD_MS;
+            _avoidTurnDuration = random(750, 950); // หมุนตัวกลับหลังหัน (U-turn) ออกจากซอยตัน
+            _avoidTurnRight = (scoreR >= scoreL);
+            _behavior = "avoid";
+            _reason = "escape_reverse";
+            _face.setTemporaryFace("surprise", 1500);
+            _song.toneBeep(660, 120);
+            Serial.printf("[SCAN] DEAD END TRAP! Both sides blocked (L:%.1f, R:%.1f). Reversing %lu ms -> U-turn\n",
+                          scoreL, scoreR, (unsigned long)_avoidReverseDuration);
+          } else {
+            // มีทางออกเปิดโล่ง: เลือกเลี้ยวไปด้านที่มีช่องว่างมากกว่า
+            _consecutiveBlocks = 0;
+            if (scoreL > scoreR) {
+              _avoidTurnRight = false; // เลือกเลี้ยวซ้าย
+              _reason = "scan_turn";
+              Serial.println("[SCAN] Selected LEFT (Clearer path)");
+            } else {
+              _avoidTurnRight = true;  // เลือกเลี้ยวขวา
+              _reason = "scan_right";
+              Serial.println("[SCAN] Selected RIGHT (Clearer path)");
+            }
+
+            _avoidTurnDuration = random(AVOID_TURN_MIN_MS, AVOID_TURN_MAX_MS);
+            _avoidStage = 6; // เริ่มหมุนเลี้ยวตัวถังทันที
+            _avoidTimer = now;
+            _behavior = "avoid";
+          }
+        }
+        return;
+      } else if (_avoidStage == 5) {
+        // ขั้นตอนที่ 5: ถอยหลังยาวกรณีติดในมุมอับ/ทางตัน
+        _motor.moveBackward(SPEED_REVERSE_PCT);
+        _behavior = "avoid";
+        _reason = "escape_reverse";
+
+        if (elapsed >= _avoidReverseDuration) {
+          _motor.stopMotors();
+          _avoidStage = 6; // หมุน U-turn
+          _avoidTimer = now;
+        }
+        return;
+      } else if (_avoidStage == 6) {
+        // ขั้นตอนที่ 6: หมุนตัวถังเลี้ยวไปทางที่เปิดโล่ง (High Torque Pivot Turn 100%)
+        if (_avoidTurnRight) {
+          _motor.turnRight(SPEED_ROAM_TURN);
+          _reason = "scan_right";
+        } else {
+          _motor.turnLeft(SPEED_ROAM_TURN);
+          _reason = "scan_turn";
+        }
+        _behavior = "avoid";
 
         if (elapsed >= _avoidTurnDuration) {
+          // เลี้ยวเสร็จสิ้น! คืนสู่การเดินหน้าสำรวจต่อทันที
           _motor.stopMotors();
           _isAvoiding = false;
           _avoidStage = 0;
           _lastAvoidClearTime = now;
+          _filterCount = 0;
+          _dropoutCount = 0;
+          _obstacleDetectCount = 0;
+          _motion.setHeadAngle(robotSettings.get(HEAD_CENTER));
+          Serial.println("[SCAN] Avoidance complete. Resuming forward roam!");
         }
         return;
       }
     }
 
     // ตรวจพบสิ่งกีดขวางหรือกำแพง (< AVOID_DISTANCE_THRESHOLD_CM)
+    // กรองยืนยัน 2 ครั้งติดกัน (Debounce) ป้องกันคลื่นสะท้อนพื้นหลอกให้หุ่นเบรกหมุนตัวซ้ำซาก
     if (dist > 0 && dist <= AVOID_DISTANCE_THRESHOLD_CM) {
+      _obstacleDetectCount++;
+    } else {
+      _obstacleDetectCount = 0;
+    }
+
+    if (_obstacleDetectCount >= 2) {
+      _obstacleDetectCount = 0;
       _motor.stopMotors();
+      _frontDistAtTrigger = dist;
       _isAvoiding = true;
       _avoidTimer = now;
-      _avoidStage = 1; // เริ่มขั้นตอนถอยหลังค้างทันที
 
-      // ตรวจสอบว่าเป็นการติดซ้ำซ้อนในมุมอับ/ทางตันหรือไม่
-      if (now - _lastAvoidClearTime < 2200) {
-        _consecutiveBlocks++;
-      } else {
-        _consecutiveBlocks = 1;
-      }
-
-      if (_consecutiveBlocks >= 2) {
-        // เจอทางตัน / เข้ามุม: ถอยหลังค้างยาวพิเศษ (~1000–1250 ms) แล้วสุ่มหมุน U-turn ออก
-        _avoidReverseDuration = random(AVOID_DEADEND_HOLD_MS - 100, AVOID_DEADEND_HOLD_MS + 150);
-        _avoidTurnDuration = random(750, 950); // หมุนตัวกลับหลังหันออกจากซอยตัน
-        _avoidTurnRight = (random(0, 2) == 0);
-        _face.setTemporaryFace("surprise", 1500);
-        _song.toneBeep(660, 120); // บี๊บเตือนสั้นๆ ว่าพบทางตัน
-        Serial.printf("[AVOID] Dead-end trap (Streak %d)! Long reverse: %lu ms -> U-turn: %lu ms\n",
-                      _consecutiveBlocks, (unsigned long)_avoidReverseDuration, (unsigned long)_avoidTurnDuration);
-      } else {
-        // เจอกำแพง/สิ่งกีดขวางทั่วไป: ถอยหลังค้าง (~650–800 ms) แล้วสุ่มเลี้ยวหาทางใหม่
-        _avoidReverseDuration = random(AVOID_REVERSE_HOLD_MS, AVOID_REVERSE_HOLD_MS + 150);
+      if (!robotSettings.get(SERVO_ENABLED)) {
+        // กรณีปิดเซอร์โวในระบบ: ถอยหลังแล้วสุ่มเลี้ยวแบบดั้งเดิม
+        _avoidStage = 5;
+        _avoidReverseDuration = AVOID_REVERSE_HOLD_MS;
         _avoidTurnDuration = random(AVOID_TURN_MIN_MS, AVOID_TURN_MAX_MS);
         _avoidTurnRight = (random(0, 2) == 0);
-        _face.setTemporaryFace("surprise", 900);
-        Serial.printf("[AVOID] Obstacle ahead (%.1f cm)! Sustained reverse: %lu ms -> Turn: %lu ms\n",
-                      dist, (unsigned long)_avoidReverseDuration, (unsigned long)_avoidTurnDuration);
+        _behavior = "avoid";
+        _reason = "escape_reverse";
+      } else if (_frontDistAtTrigger > 0 && _frontDistAtTrigger < 14.0f) {
+        // ถ้าชิดสิ่งกีดขวางมากเกินไป (< 14 cm) ถอยระยะสั้นๆ ก่อน เพื่อเปิดช่องว่างให้หัวหมุนกวาดได้
+        _avoidStage = 1;
+        _avoidReverseDuration = 260;
+        _motor.moveBackward(SPEED_REVERSE_PCT);
+        _behavior = "avoid";
+        _reason = "escape_reverse";
+      } else {
+        // เริ่มกวาดหัวสแกนซ้ายทันที
+        _avoidStage = 2;
+        _motion.setHeadAngle(HEAD_SCAN_LEFT_DEG);
+        _behavior = "avoid";
+        _reason = "scan_turn";
       }
+      _face.setTemporaryFace("surprise", 1200);
       return;
     }
 

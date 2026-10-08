@@ -254,6 +254,9 @@ public:
     if (axis == "right") return _servoArmR.write(robotSettings.servoAngle(RIGHT_MIN, angle));
     return false;
   }
+  bool setHeadAngle(int angle) {
+    return setManualAxis("head", angle);
+  }
 
 private:
   ServoOutput _servoHead{0};
