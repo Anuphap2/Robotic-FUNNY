@@ -15,7 +15,7 @@
 
 RobotSettings robotSettings;
 ConfigStore configStore;
-const char* const FIRMWARE_VERSION = "2.3.6";
+const char* const FIRMWARE_VERSION = "2.3.7";
 uint32_t maxLoopUs = 0;
 uint32_t driveBootId = 0;
 ManualDriveGuard manualDriveGuard;
@@ -92,9 +92,7 @@ void handleTelemetry() {
     (unsigned long)millis(), (unsigned long)driveBootId, (unsigned long)maxLoopUs,
     faceEngine.ready() ? "true" : "false", motionPlayer.ready() ? "true" : "false", songPlayer.hardwareOK() ? "true" : "false",
     motorController.ready() ? "true" : "false",
-    WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0,
-    WiFi.status() == WL_CONNECTED ? "station" : "ap",
-    (WiFi.status() == WL_CONNECTED ? WiFi.localIP() : WiFi.softAPIP()).toString().c_str(),
+    0, "ap", WiFi.softAPIP().toString().c_str(),
     FIRMWARE_VERSION, (unsigned long)configStore.revision(), (long)robotSettings.get(TELEMETRY_INTERVAL),
     recreationEngine.interactiveString(), recreationEngine.decisionClass(), recreationEngine.decisionReason(),
     recreationEngine.behaviorString(), recreationEngine.targetLocked() ? "true" : "false",
@@ -398,37 +396,17 @@ void setup() {
   if (!faceEngine.begin()) {
     Serial.println("⚠️ Warning: SH1106 OLED Display not detected at 0x3C");
   } else {
-    faceEngine.showBootMessage("Connecting WiFi...", WIFI_SSID);
+    faceEngine.showBootMessage("Starting Access Point", AP_SSID);
   }
 
-  // Connect to Wi-Fi with timeout and fallback to SoftAP
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  // Start a dedicated robot network so phones can control it without a router.
+  WiFi.mode(WIFI_AP);
   WiFi.setSleep(false); // Low-latency control; trades additional radio power for prompt reception.
-  Serial.print("Connecting to Wi-Fi: ");
-  Serial.print(WIFI_SSID);
-
-  unsigned long wifiStart = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - wifiStart < 7000) {
-    delay(250);
-    Serial.print(".");
-  }
-
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\n[WiFi] Connected successfully!");
-    Serial.print("[WiFi] IP Address: ");
-    Serial.println(WiFi.localIP());
-    faceEngine.showBootMessage("WiFi Connected!", WiFi.localIP().toString().c_str());
-  } else {
-    Serial.println("\n[WiFi] Connection timed out. Starting Fallback SoftAP mode...");
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP(AP_SSID, AP_PASSWORD);
-    Serial.print("[WiFi AP] SSID: ");
-    Serial.println(AP_SSID);
-    Serial.print("[WiFi AP] IP Address: ");
-    Serial.println(WiFi.softAPIP());
-    faceEngine.showBootMessage("AP Mode: Robot-Recreation", WiFi.softAPIP().toString().c_str());
-  }
+  const bool apReady = WiFi.softAP(AP_SSID, AP_PASSWORD, 1, false, 8);
+  Serial.printf("[WiFi AP] %s | SSID: %s | IP: %s\n",
+                apReady ? "Ready" : "Failed", AP_SSID, WiFi.softAPIP().toString().c_str());
+  faceEngine.showBootMessage(apReady ? "AP Ready: Robot-Recreation" : "AP Start Failed",
+                             WiFi.softAPIP().toString().c_str());
 
   // Setup Web Server Endpoints
   const char* headers[] = {"X-Robot-Request", "Content-Length", "Content-Type"};
