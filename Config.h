@@ -87,8 +87,8 @@ const int PIN_B1B = 12; // Motor Right B
 // ============================================================================
 // NETWORK CONFIGURATION
 // ============================================================================
-const char* const WIFI_SSID     = "Why na";
-const char* const WIFI_PASSWORD = "12345678";
+// const char* const WIFI_SSID     = "Why na";
+// const char* const WIFI_PASSWORD = "12345678";
 
 // Fallback Access Point (AP) if router not reachable
 const char* const AP_SSID       = "Robot-Recreation";
